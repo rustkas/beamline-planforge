@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/layout.schema.json",
+  "title": "Layout",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["objects"],
+  "properties": {
+    "objects": {
+      "type": "array",
+      "items": { "$ref": "planforge://schemas/layout_object.schema.json" }
+    }
+  }
+}

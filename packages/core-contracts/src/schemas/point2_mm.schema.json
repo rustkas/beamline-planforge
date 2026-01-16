@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/point2_mm.schema.json",
+  "title": "Point2mm",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["x", "y"],
+  "properties": {
+    "x": { "type": "integer" },
+    "y": { "type": "integer" }
+  }
+}

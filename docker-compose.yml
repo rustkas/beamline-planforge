@@ -1,0 +1,8 @@
+version: "3.9"
+services:
+  web:
+    image: planforge/web
+  api-core:
+    image: planforge/api-core
+  ai-orchestrator:
+    image: planforge/ai-orchestrator

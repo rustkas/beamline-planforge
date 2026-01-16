@@ -1,0 +1,122 @@
+{
+  "schema_version": "0.1.0",
+  "project": {
+    "project_id": "proj_demo_001",
+    "revision_id": "rev_0001",
+    "units": "mm",
+    "ruleset_version": "pricing_ruleset_0.1.0"
+  },
+  "room": {
+    "size_mm": { "width": 3200, "depth": 2600, "height": 2700 },
+    "openings": [
+      {
+        "id": "door_1",
+        "kind": "door",
+        "wall": "south",
+        "offset_mm": 400,
+        "width_mm": 900,
+        "height_mm": 2100,
+        "sill_height_mm": 0
+      },
+      {
+        "id": "window_1",
+        "kind": "window",
+        "wall": "north",
+        "offset_mm": 900,
+        "width_mm": 1200,
+        "height_mm": 1200,
+        "sill_height_mm": 900
+      }
+    ],
+    "utilities": [
+      {
+        "id": "water_1",
+        "kind": "water",
+        "position_mm": { "x": 1200, "y": 0 }
+      },
+      {
+        "id": "drain_1",
+        "kind": "drain",
+        "position_mm": { "x": 1200, "y": 0 }
+      },
+      {
+        "id": "power_1",
+        "kind": "power",
+        "position_mm": { "x": 2400, "y": 0 }
+      },
+      {
+        "id": "vent_1",
+        "kind": "vent",
+        "position_mm": { "x": 1600, "y": 2600 }
+      }
+    ],
+    "restricted_zones": [
+      {
+        "id": "pillar_1",
+        "min_mm": { "x": 3000, "y": 2400 },
+        "max_mm": { "x": 3200, "y": 2600 },
+        "reason": "Structural column"
+      }
+    ]
+  },
+  "layout": {
+    "objects": [
+      {
+        "id": "obj_base_sink_600",
+        "kind": "module",
+        "catalog_item_id": "base_sink_600",
+        "transform_mm": {
+          "position_mm": { "x": 1000, "y": 0 },
+          "rotation_deg": 0
+        },
+        "dims_mm": { "width": 600, "depth": 600, "height": 720 },
+        "material_slots": {
+          "front": "mat_front_white",
+          "body": "mat_body_white",
+          "top": "mat_top_oak"
+        },
+        "tags": ["base", "sink"]
+      },
+      {
+        "id": "obj_base_drawers_800",
+        "kind": "module",
+        "catalog_item_id": "base_drawers_800",
+        "transform_mm": {
+          "position_mm": { "x": 1600, "y": 0 },
+          "rotation_deg": 0
+        },
+        "dims_mm": { "width": 800, "depth": 600, "height": 720 },
+        "material_slots": {
+          "front": "mat_front_white",
+          "body": "mat_body_white",
+          "top": "mat_top_oak"
+        },
+        "tags": ["base", "drawers"]
+      },
+      {
+        "id": "obj_tall_oven_600",
+        "kind": "appliance",
+        "catalog_item_id": "tall_oven_600",
+        "transform_mm": {
+          "position_mm": { "x": 2600, "y": 0 },
+          "rotation_deg": 0
+        },
+        "dims_mm": { "width": 600, "depth": 600, "height": 2100 },
+        "material_slots": {
+          "front": "mat_front_white",
+          "body": "mat_body_white"
+        },
+        "tags": ["tall", "oven"]
+      }
+    ]
+  },
+  "catalog_refs": {
+    "modules_catalog_version": "modules_demo_0.1.0",
+    "materials_catalog_version": "materials_demo_0.1.0"
+  },
+  "extensions": {
+    "com.planforge.constraints.basic": {
+      "hint": "example extension payload"
+    }
+  }
+}

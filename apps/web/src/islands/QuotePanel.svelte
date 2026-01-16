@@ -1,0 +1,1 @@
+<div>Quote Panel</div>

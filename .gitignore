@@ -1,0 +1,23 @@
+# Node / Bun
+node_modules/
+.bun/
+bun.lockb
+
+# Rust / WASM
+target/
+pkg/
+*.wasm
+
+# Build outputs
+dist/
+.build/
+.out/
+
+# Env
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+.DS_Store

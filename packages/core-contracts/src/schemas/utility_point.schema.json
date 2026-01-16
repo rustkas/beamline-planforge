@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/utility_point.schema.json",
+  "title": "UtilityPoint",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "position_mm"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["water", "drain", "power", "vent", "gas"] },
+    "position_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" }
+  }
+}

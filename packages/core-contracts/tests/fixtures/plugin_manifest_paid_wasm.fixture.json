@@ -1,0 +1,94 @@
+{
+  "$schema": "planforge://schemas/plugin-manifest.schema.json",
+  "manifest_version": "1.0",
+  "id": "com.planforge.solver.pro",
+  "name": "Solver Pro",
+  "version": "0.1.0",
+  "description": "Advanced layout solver and optimization routines.",
+  "license": "Proprietary",
+  "publisher": {
+    "name": "Kitchen PlanForge",
+    "url": "https://example.invalid"
+  },
+  "runtime": {
+    "kind": "wasm",
+    "entry": {
+      "wasm": "dist/plugin.wasm",
+      "js": "dist/loader.js"
+    },
+    "min_host_version": "0.1.0",
+    "compatibility": {
+      "core_contracts": "^0.1.0",
+      "core_wasm": "^0.1.0",
+      "host_api": "^0.1.0"
+    }
+  },
+  "capabilities": {
+    "constraints": false,
+    "solver": true,
+    "pricing": false,
+    "export": false,
+    "ui": {
+      "panels": [
+        {
+          "id": "solver_pro_panel",
+          "title": "Solver Pro",
+          "mount": { "kind": "svelte", "target": "dist/panel.svelte" }
+        }
+      ],
+      "wizard_steps": [],
+      "commands": [
+        {
+          "id": "solver_pro_run",
+          "title": "Run optimization",
+          "action": { "kind": "rpc", "method": "solver.run" }
+        }
+      ]
+    }
+  },
+  "permissions": {
+    "network": {
+      "allow": true,
+      "allowlist": ["https://license.planforge.example/verify"]
+    },
+    "storage": {
+      "allow": true,
+      "scopes": ["plugin_kv", "cache"]
+    },
+    "project_data": {
+      "read": true,
+      "write_via_patches": true
+    },
+    "catalog": {
+      "read": true
+    },
+    "pricing": {
+      "read": false
+    },
+    "orders": {
+      "read": false,
+      "write": false
+    }
+  },
+  "integrity": {
+    "channel": "paid",
+    "signature": {
+      "alg": "ed25519",
+      "value": "REPLACE_WITH_BASE64_SIGNATURE"
+    },
+    "hashes": {
+      "dist/plugin.wasm": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "dist/loader.js": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "dist/panel.svelte": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  },
+  "configuration_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "max_iterations": { "type": "integer", "minimum": 10, "maximum": 5000, "default": 500 },
+      "timeout_ms": { "type": "integer", "minimum": 50, "maximum": 5000, "default": 500 }
+    },
+    "required": []
+  }
+}

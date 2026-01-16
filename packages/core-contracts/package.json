@@ -1,0 +1,15 @@
+{
+  "name": "@planforge/core-contracts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "dependencies": {
+    "ajv": "^8.12.0",
+    "ajv-formats": "^3.0.1"
+  },
+  "scripts": {
+    "check:schemas": "bun scripts/check_schemas.ts",
+    "test": "bun test",
+    "ci": "bun run check:schemas && bun test"
+  }
+}

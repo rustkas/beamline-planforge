@@ -1,0 +1,330 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/plugin-manifest.schema.json",
+  "title": "PlanForgePluginManifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "$schema",
+    "manifest_version",
+    "id",
+    "name",
+    "version",
+    "description",
+    "license",
+    "publisher",
+    "runtime",
+    "capabilities",
+    "permissions",
+    "integrity",
+    "configuration_schema"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "planforge://schemas/plugin-manifest.schema.json"
+    },
+    "manifest_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 3,
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
+    },
+    "name": { "type": "string", "minLength": 1 },
+    "version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+    },
+    "description": { "type": "string", "minLength": 1 },
+    "license": { "type": "string", "minLength": 1 },
+    "publisher": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "minLength": 1 }
+      }
+    },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "capabilities": { "$ref": "#/$defs/capabilities" },
+    "permissions": { "$ref": "#/$defs/permissions" },
+    "integrity": { "$ref": "#/$defs/integrity" },
+    "configuration_schema": {
+      "description": "JSON Schema for plugin configuration (plugin-specific).",
+      "type": "object"
+    }
+  },
+  "$defs": {
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "entry", "min_host_version", "compatibility"],
+      "properties": {
+        "kind": { "enum": ["web", "wasm", "server"] },
+        "entry": { "$ref": "#/$defs/entry" },
+        "min_host_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+        },
+        "compatibility": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["core_contracts", "host_api"],
+          "properties": {
+            "core_contracts": { "type": "string", "minLength": 1 },
+            "core_wasm": { "type": "string", "minLength": 1 },
+            "host_api": { "type": "string", "minLength": 1 }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "wasm" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "entry": { "$ref": "#/$defs/entry_wasm" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "web" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "entry": { "$ref": "#/$defs/entry_web" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "server" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "entry": { "$ref": "#/$defs/entry_server" }
+            }
+          }
+        }
+      ]
+    },
+    "entry": {
+      "description": "Generic entry; actual requirements depend on runtime.kind.",
+      "type": "object"
+    },
+    "entry_wasm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wasm", "js"],
+      "properties": {
+        "wasm": { "type": "string", "minLength": 1 },
+        "js": { "type": "string", "minLength": 1 }
+      }
+    },
+    "entry_web": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["js"],
+      "properties": {
+        "js": { "type": "string", "minLength": 1 },
+        "css": { "type": "string", "minLength": 1 }
+      }
+    },
+    "entry_server": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["module"],
+      "properties": {
+        "module": { "type": "string", "minLength": 1 }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["constraints", "solver", "pricing", "export", "ui"],
+      "properties": {
+        "constraints": { "type": "boolean" },
+        "solver": { "type": "boolean" },
+        "pricing": { "type": "boolean" },
+        "export": { "type": "boolean" },
+        "ui": { "$ref": "#/$defs/ui_capabilities" }
+      }
+    },
+    "ui_capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["panels", "wizard_steps", "commands"],
+      "properties": {
+        "panels": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ui_panel" }
+        },
+        "wizard_steps": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ui_wizard_step" }
+        },
+        "commands": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ui_command" }
+        }
+      }
+    },
+    "ui_panel": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "mount"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "mount": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "target"],
+          "properties": {
+            "kind": { "enum": ["svelte", "html"] },
+            "target": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "ui_wizard_step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "mount", "order"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "order": { "type": "integer", "minimum": 0 },
+        "mount": { "$ref": "#/$defs/ui_panel/properties/mount" }
+      }
+    },
+    "ui_command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "action"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "action": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["rpc"] },
+            "method": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["network", "storage", "project_data", "catalog", "pricing", "orders"],
+      "properties": {
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allow", "allowlist"],
+          "properties": {
+            "allow": { "type": "boolean" },
+            "allowlist": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allow", "scopes"],
+          "properties": {
+            "allow": { "type": "boolean" },
+            "scopes": {
+              "type": "array",
+              "items": {
+                "enum": ["plugin_kv", "cache", "none"]
+              }
+            }
+          }
+        },
+        "project_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["read", "write_via_patches"],
+          "properties": {
+            "read": { "type": "boolean" },
+            "write_via_patches": { "type": "boolean" }
+          }
+        },
+        "catalog": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["read"],
+          "properties": {
+            "read": { "type": "boolean" }
+          }
+        },
+        "pricing": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["read"],
+          "properties": {
+            "read": { "type": "boolean" }
+          }
+        },
+        "orders": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["read", "write"],
+          "properties": {
+            "read": { "type": "boolean" },
+            "write": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel", "signature", "hashes"],
+      "properties": {
+        "channel": { "enum": ["oss", "paid"] },
+        "signature": { "$ref": "#/$defs/signature" },
+        "hashes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^sha256:[a-fA-F0-9]{64}$"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "channel": { "const": "oss" } }, "required": ["channel"] },
+          "then": {
+            "properties": {
+              "signature": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["alg", "value"],
+                "properties": {
+                  "alg": { "const": "none" },
+                  "value": { "const": "" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "value"],
+      "properties": {
+        "alg": { "enum": ["none", "ed25519", "ecdsa_p256"] },
+        "value": { "type": "string" }
+      }
+    }
+  }
+}

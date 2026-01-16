@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/layout_object.schema.json",
+  "title": "LayoutObject",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "catalog_item_id", "transform_mm", "dims_mm", "material_slots"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["module", "appliance", "decor"] },
+    "catalog_item_id": { "type": "string", "minLength": 1 },
+    "transform_mm": { "$ref": "planforge://schemas/transform2d_mm.schema.json" },
+    "dims_mm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "depth", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "depth": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "material_slots": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "slot_name -> material_catalog_item_id"
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

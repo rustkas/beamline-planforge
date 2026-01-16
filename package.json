@@ -1,0 +1,16 @@
+{
+  "name": "kitchen-planforge",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "plugins/*"
+  ],
+  "scripts": {
+    "dev": "bash scripts/dev.sh",
+    "build": "bash scripts/build.sh",
+    "test": "bash scripts/test.sh",
+    "wasm:build": "bash scripts/wasm_build.sh"
+  }
+}

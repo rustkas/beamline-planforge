@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/rect_zone.schema.json",
+  "title": "RectZone",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "min_mm", "max_mm", "reason"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "min_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" },
+    "max_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" },
+    "reason": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/transform2d_mm.schema.json",
+  "title": "Transform2Dmm",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["position_mm", "rotation_deg"],
+  "properties": {
+    "position_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" },
+    "rotation_deg": { "type": "integer", "minimum": 0, "maximum": 359 }
+  }
+}

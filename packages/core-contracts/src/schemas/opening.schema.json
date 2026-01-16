@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/opening.schema.json",
+  "title": "Opening",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "kind", "wall", "offset_mm", "width_mm", "height_mm"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "kind": { "enum": ["door", "window"] },
+    "wall": { "enum": ["north", "east", "south", "west"] },
+    "offset_mm": { "type": "integer", "minimum": 0 },
+    "width_mm": { "type": "integer", "minimum": 1 },
+    "height_mm": { "type": "integer", "minimum": 1 },
+    "sill_height_mm": { "type": "integer", "minimum": 0 }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "window" } }, "required": ["kind"] },
+      "then": { "required": ["sill_height_mm"] }
+    }
+  ]
+}

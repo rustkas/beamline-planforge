@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/kitchen_state.schema.json",
+  "title": "KitchenState",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "project", "room", "layout", "catalog_refs"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["project_id", "revision_id", "units"],
+      "properties": {
+        "project_id": { "type": "string", "minLength": 1 },
+        "revision_id": { "type": "string", "minLength": 1 },
+        "units": { "const": "mm" },
+        "ruleset_version": { "type": "string" }
+      }
+    },
+    "room": { "$ref": "planforge://schemas/room.schema.json" },
+    "layout": { "$ref": "planforge://schemas/layout.schema.json" },
+    "catalog_refs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["modules_catalog_version", "materials_catalog_version"],
+      "properties": {
+        "modules_catalog_version": { "type": "string" },
+        "materials_catalog_version": { "type": "string" }
+      }
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": { "type": "object" },
+      "description": "Plugin-defined extension payloads keyed by plugin id."
+    }
+  }
+}

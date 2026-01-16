@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/render_node.schema.json",
+  "title": "RenderNode",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "source_object_id", "gltf_key", "transform", "material_overrides"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "source_object_id": { "type": "string", "minLength": 1 },
+    "gltf_key": { "type": "string", "minLength": 1 },
+    "transform": { "$ref": "planforge://schemas/transform3d.schema.json" },
+    "material_overrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "mesh_material_slot -> material_id"
+    },
+    "lod": { "type": "integer", "minimum": 0, "maximum": 10 },
+    "pickable": { "type": "boolean", "default": true }
+  }
+}

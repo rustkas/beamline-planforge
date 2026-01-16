@@ -1,0 +1,67 @@
+{
+  "schema_version": "0.1.0",
+  "assets": {
+    "gltf": {
+      "base_sink_600": { "asset_id": "asset_base_sink_600_glb", "uri": "assets/models/base_sink_600.glb" },
+      "base_drawers_800": { "asset_id": "asset_base_drawers_800_glb", "uri": "assets/models/base_drawers_800.glb" },
+      "tall_oven_600": { "asset_id": "asset_tall_oven_600_glb", "uri": "assets/models/tall_oven_600.glb" }
+    }
+  },
+  "nodes": [
+    {
+      "id": "node_base_sink_600",
+      "source_object_id": "obj_base_sink_600",
+      "gltf_key": "base_sink_600",
+      "transform": {
+        "position_m": { "x": 1.0, "y": 0.0, "z": 0.0 },
+        "rotation_quat": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material_overrides": {
+        "front": "mat_front_white",
+        "body": "mat_body_white",
+        "top": "mat_top_oak"
+      },
+      "lod": 0,
+      "pickable": true
+    },
+    {
+      "id": "node_base_drawers_800",
+      "source_object_id": "obj_base_drawers_800",
+      "gltf_key": "base_drawers_800",
+      "transform": {
+        "position_m": { "x": 1.6, "y": 0.0, "z": 0.0 },
+        "rotation_quat": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material_overrides": {
+        "front": "mat_front_white",
+        "body": "mat_body_white",
+        "top": "mat_top_oak"
+      },
+      "lod": 0,
+      "pickable": true
+    },
+    {
+      "id": "node_tall_oven_600",
+      "source_object_id": "obj_tall_oven_600",
+      "gltf_key": "tall_oven_600",
+      "transform": {
+        "position_m": { "x": 2.6, "y": 0.0, "z": 0.0 },
+        "rotation_quat": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+        "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+      },
+      "material_overrides": {
+        "front": "mat_front_white",
+        "body": "mat_body_white"
+      },
+      "lod": 0,
+      "pickable": true
+    }
+  ],
+  "extensions": {
+    "com.planforge.render.demo": {
+      "note": "example render extension payload"
+    }
+  }
+}

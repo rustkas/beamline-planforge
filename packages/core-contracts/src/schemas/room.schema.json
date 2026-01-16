@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/room.schema.json",
+  "title": "RoomModel",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["size_mm", "openings", "utilities", "restricted_zones"],
+  "properties": {
+    "size_mm": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "depth", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "depth": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "openings": {
+      "type": "array",
+      "items": { "$ref": "planforge://schemas/opening.schema.json" }
+    },
+    "utilities": {
+      "type": "array",
+      "items": { "$ref": "planforge://schemas/utility_point.schema.json" }
+    },
+    "restricted_zones": {
+      "type": "array",
+      "items": { "$ref": "planforge://schemas/rect_zone.schema.json" }
+    }
+  }
+}
