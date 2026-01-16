@@ -1,8 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import Ajv from "ajv";
+import Ajv2020 from "ajv/dist/2020";
 import add_formats from "ajv-formats";
-import draft2020 from "ajv/dist/refs/json-schema-2020-12/schema.json" assert { type: "json" };
 
 type json_value = null | boolean | number | string | json_value[] | { [k: string]: json_value };
 
@@ -98,12 +97,11 @@ async function main(): Promise<void> {
 
   expect(missing_refs.length === 0, `Unresolved or disallowed $ref:\n- ${missing_refs.join("\n- ")}`);
 
-  const ajv = new Ajv({
+  const ajv = new Ajv2020({
     strict: true,
     allErrors: true,
     allowUnionTypes: false
   });
-  ajv.addMetaSchema(draft2020);
   add_formats(ajv);
 
   for (const s of schemas) {

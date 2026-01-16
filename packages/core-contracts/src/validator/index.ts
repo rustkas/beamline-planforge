@@ -1,6 +1,6 @@
-import Ajv from "ajv";
+import Ajv2020 from "ajv/dist/2020";
+import type { ErrorObject } from "ajv";
 import add_formats from "ajv-formats";
-import draft2020 from "ajv/dist/refs/json-schema-2020-12/schema.json" assert { type: "json" };
 import { get_all_schemas } from "./load_schemas";
 
 export type schema_id =
@@ -13,7 +13,7 @@ export interface validation_result {
   errors: string[];
 }
 
-function format_errors(errors: Ajv.ErrorObject[] | null | undefined): string[] {
+function format_errors(errors: ErrorObject[] | null | undefined): string[] {
   if (!errors || errors.length === 0) return [];
   return errors.map((e) => {
     const path = e.instancePath && e.instancePath.length > 0 ? e.instancePath : "/";
@@ -22,14 +22,13 @@ function format_errors(errors: Ajv.ErrorObject[] | null | undefined): string[] {
   });
 }
 
-export function create_ajv(): Ajv {
-  const ajv = new Ajv({
+export function create_ajv(): Ajv2020 {
+  const ajv = new Ajv2020({
     strict: true,
     allErrors: true,
     allowUnionTypes: false
   });
 
-  ajv.addMetaSchema(draft2020);
   add_formats(ajv);
 
   for (const schema of get_all_schemas()) {
