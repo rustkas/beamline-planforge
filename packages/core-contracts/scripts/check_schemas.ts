@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import Ajv from "ajv";
 import add_formats from "ajv-formats";
-import draft2020 from "ajv/dist/refs/json-schema-draft-2020-12.json";
+import draft2020 from "ajv/dist/refs/json-schema-2020-12/schema.json" assert { type: "json" };
 
 type json_value = null | boolean | number | string | json_value[] | { [k: string]: json_value };
 
