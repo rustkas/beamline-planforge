@@ -1,5 +1,6 @@
 import { writable } from "svelte/store";
 import { create_api_core_client } from "./api_core_client";
+import { create_ai_orchestrator_client, type TurnResult } from "./ai_orchestrator_client";
 import { create_core_client } from "./core_adapter";
 import { load_kitchen_state_fixture } from "./fixtures";
 
@@ -20,6 +21,8 @@ export type AppState = {
   project_id: string | null;
   revision_id: string | null;
   api_base_url: string;
+  orchestrator_base_url: string;
+  session_id: string | null;
   mode: Mode;
   busy: boolean;
   error: string | null;
@@ -32,6 +35,8 @@ const initial_state: AppState = {
   project_id: null,
   revision_id: null,
   api_base_url: "http://localhost:3001",
+  orchestrator_base_url: "http://localhost:3002",
+  session_id: null,
   mode: "server",
   busy: false,
   error: null
@@ -51,6 +56,10 @@ function storage_key(): string {
 
 function mode_key(): string {
   return "planforge_demo_mode";
+}
+
+function session_key(project_id: string): string {
+  return `planforge_demo_orch_session::${project_id}`;
 }
 
 function read_demo_ids(): { project_id: string; revision_id: string } | null {
@@ -77,6 +86,23 @@ function clear_demo_ids(): void {
 
 function write_mode(mode: Mode): void {
   localStorage.setItem(mode_key(), mode);
+}
+
+function read_session_id(project_id: string): string | null {
+  try {
+    const raw = localStorage.getItem(session_key(project_id));
+    return raw ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function write_session_id(project_id: string, session_id: string): void {
+  localStorage.setItem(session_key(project_id), session_id);
+}
+
+function clear_session_id(project_id: string): void {
+  localStorage.removeItem(session_key(project_id));
 }
 
 export async function load_fixture(): Promise<void> {
@@ -208,9 +234,24 @@ export async function move_first_object_x(new_x: number): Promise<void> {
   }
 }
 
-export async function init_demo(mode: Mode, api_base_url: string): Promise<void> {
+async function ensure_session(project_id: string, revision_id: string): Promise<string | null> {
+  const snapshot = get_snapshot();
+  const orchestrator = create_ai_orchestrator_client(snapshot.orchestrator_base_url);
+  const existing = read_session_id(project_id);
+  if (existing) return existing;
+
+  const created = await orchestrator.create_session(project_id, revision_id);
+  if (!created.ok) {
+    set_state({ error: created.error.message });
+    return null;
+  }
+  write_session_id(project_id, created.data.session_id);
+  return created.data.session_id;
+}
+
+export async function init_demo(mode: Mode, api_base_url: string, orchestrator_base_url: string): Promise<void> {
   write_mode(mode);
-  set_state({ mode, api_base_url, error: null });
+  set_state({ mode, api_base_url, orchestrator_base_url, error: null });
 
   if (mode === "local") {
     await load_fixture();
@@ -236,11 +277,18 @@ export async function init_demo(mode: Mode, api_base_url: string): Promise<void>
     const revision = await api.get_revision(ids.project_id, ids.revision_id);
     if (!revision.ok) {
       clear_demo_ids();
+      clear_session_id(ids.project_id);
       set_state({ error: revision.error.message });
       return;
     }
 
-    set_state({ project_id: ids.project_id, revision_id: ids.revision_id, kitchen_state: revision.data.kitchen_state });
+    const session_id = await ensure_session(ids.project_id, ids.revision_id);
+    set_state({
+      project_id: ids.project_id,
+      revision_id: ids.revision_id,
+      kitchen_state: revision.data.kitchen_state,
+      session_id
+    });
     await recompute_server();
   } finally {
     set_state({ busy: false });
@@ -250,8 +298,11 @@ export async function init_demo(mode: Mode, api_base_url: string): Promise<void>
 export async function reset_demo(): Promise<void> {
   clear_demo_ids();
   const snapshot = get_snapshot();
+  if (snapshot.project_id) {
+    clear_session_id(snapshot.project_id);
+  }
   if (snapshot.mode === "server") {
-    await init_demo("server", snapshot.api_base_url);
+    await init_demo("server", snapshot.api_base_url, snapshot.orchestrator_base_url);
   }
 }
 
@@ -266,6 +317,70 @@ export async function refresh_revision(): Promise<void> {
   }
   set_state({ kitchen_state: revision.data.kitchen_state });
   await recompute_server();
+}
+
+export async function run_agent_command(command: string): Promise<TurnResult | null> {
+  const snapshot = get_snapshot();
+  if (snapshot.mode !== "server") {
+    set_state({ error: "Agent available only in server mode" });
+    return null;
+  }
+  if (!snapshot.project_id || !snapshot.revision_id) {
+    set_state({ error: "Project not initialized" });
+    return null;
+  }
+
+  set_state({ busy: true, error: null });
+  try {
+    const orchestrator = create_ai_orchestrator_client(snapshot.orchestrator_base_url);
+    let session_id = snapshot.session_id ?? read_session_id(snapshot.project_id);
+    if (!session_id) {
+      const created = await orchestrator.create_session(snapshot.project_id, snapshot.revision_id);
+      if (!created.ok) {
+        set_state({ error: created.error.message });
+        return null;
+      }
+      session_id = created.data.session_id;
+      write_session_id(snapshot.project_id, session_id);
+      set_state({ session_id });
+    }
+
+    const turn = await orchestrator.run_turn(session_id, command);
+    if (!turn.ok) {
+      if (turn.error.status === 404) {
+        const created = await orchestrator.create_session(snapshot.project_id, snapshot.revision_id);
+        if (created.ok) {
+          session_id = created.data.session_id;
+          write_session_id(snapshot.project_id, session_id);
+          set_state({ session_id });
+          const retry = await orchestrator.run_turn(session_id, command);
+          if (retry.ok) return await handle_turn_result(retry.data);
+        }
+      }
+      set_state({ error: turn.error.message });
+      return null;
+    }
+
+    return await handle_turn_result(turn.data);
+  } finally {
+    set_state({ busy: false });
+  }
+}
+
+async function handle_turn_result(result: TurnResult): Promise<TurnResult> {
+  if (result.violations && result.violations.length > 0) {
+    set_state({ violations: result.violations as Violation[] });
+  }
+
+  if (result.new_revision_id) {
+    set_state({ revision_id: result.new_revision_id });
+    if (result.project_id) {
+      write_demo_ids(result.project_id, result.new_revision_id);
+    }
+    await refresh_revision();
+  }
+
+  return result;
 }
 
 export function get_snapshot(): AppState {
