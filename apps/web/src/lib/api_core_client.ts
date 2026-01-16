@@ -22,6 +22,20 @@ type RevisionResponse = {
   kitchen_state: unknown;
 };
 
+type QuoteResponse = {
+  ruleset_version: string;
+  total: { currency: string; amount: number };
+  currency: string;
+  items: Array<{
+    code: string;
+    title: string;
+    qty: number;
+    unit_price: { currency: string; amount: number };
+    amount: { currency: string; amount: number };
+    meta?: Record<string, unknown>;
+  }>;
+};
+
 function make_error(status: number, message: string, body?: unknown): ApiError {
   return { code: `http.${status}`, message, status, body };
 }
@@ -58,6 +72,12 @@ export function create_api_core_client(base_url: string) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(patch)
+      }),
+    quote: (project_id: string, revision_id: string) =>
+      request<QuoteResponse>(`/projects/${project_id}/revisions/${revision_id}/quote`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({})
       }),
     render: (project_id: string, revision_id: string, quality: "draft" | "quality") =>
       request<unknown>(`/projects/${project_id}/revisions/${revision_id}/render`, {

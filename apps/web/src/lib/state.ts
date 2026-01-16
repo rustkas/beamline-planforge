@@ -3,8 +3,14 @@ import { create_api_core_client } from "./api_core_client";
 import { create_ai_orchestrator_client, type TurnResult } from "./ai_orchestrator_client";
 import { create_core_client } from "./core_adapter";
 import { load_kitchen_state_fixture } from "./fixtures";
-import type { host_context, render_instruction } from "@planforge/plugin-sdk";
-import { run_constraints_post_validate_hooks, run_render_post_render_hooks } from "@planforge/plugin-runtime";
+import type { host_context, quote, render_instruction } from "@planforge/plugin-sdk";
+import {
+  merge_quote,
+  run_constraints_post_validate_hooks,
+  run_pricing_post_quote_hooks,
+  run_render_post_render_hooks,
+  type quote_merge_diagnostic
+} from "@planforge/plugin-runtime";
 import { get_loaded_plugins } from "./plugins/registry";
 
 export type Mode = "server" | "local";
@@ -23,6 +29,10 @@ export type AppState = {
   render_instructions: render_instruction[];
   base_violations: Violation[];
   violations: Violation[];
+  base_quote: quote | null;
+  final_quote: quote | null;
+  quote_diagnostics: quote_merge_diagnostic[];
+  pricing_context: { channel?: string; region?: string };
   project_id: string | null;
   revision_id: string | null;
   api_base_url: string;
@@ -39,6 +49,10 @@ const initial_state: AppState = {
   render_instructions: [],
   base_violations: [],
   violations: [],
+  base_quote: null,
+  final_quote: null,
+  quote_diagnostics: [],
+  pricing_context: {},
   project_id: null,
   revision_id: null,
   api_base_url: "http://localhost:3001",
@@ -143,11 +157,21 @@ export async function recompute(): Promise<void> {
       base_violations,
       render_model
     });
+    const quote_result = await recompute_quote({
+      mode: "local",
+      api_base_url: snapshot.api_base_url,
+      kitchen_state: snapshot.kitchen_state,
+      host_context: build_host_context(snapshot),
+      pricing_context: snapshot.pricing_context
+    });
     set_state({
       base_violations,
       violations: plugin_result.violations,
       render_model,
-      render_instructions: plugin_result.instructions
+      render_instructions: plugin_result.instructions,
+      base_quote: quote_result.base_quote,
+      final_quote: quote_result.final_quote,
+      quote_diagnostics: quote_result.diagnostics
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Core call failed";
@@ -174,14 +198,35 @@ async function recompute_server(): Promise<void> {
       base_violations: snapshot.base_violations,
       render_model: render.data
     });
+    const quote_result = await recompute_quote({
+      mode: "server",
+      api_base_url: snapshot.api_base_url,
+      project_id: snapshot.project_id,
+      revision_id: snapshot.revision_id,
+      kitchen_state: snapshot.kitchen_state,
+      host_context: build_host_context(snapshot),
+      pricing_context: snapshot.pricing_context
+    });
     set_state({
       render_model: render.data,
       violations: plugin_result.violations,
-      render_instructions: plugin_result.instructions
+      render_instructions: plugin_result.instructions,
+      base_quote: quote_result.base_quote,
+      final_quote: quote_result.final_quote,
+      quote_diagnostics: quote_result.diagnostics
     });
   } finally {
     set_state({ busy: false });
   }
+}
+
+function build_host_context(snapshot: AppState): host_context {
+  return {
+    host_version: "0.1.0",
+    plugin_id: "host",
+    project_id: snapshot.project_id ?? undefined,
+    revision_id: snapshot.revision_id ?? undefined
+  };
 }
 
 async function apply_plugin_hooks(args: {
@@ -195,12 +240,7 @@ async function apply_plugin_hooks(args: {
     return { violations: args.base_violations, instructions: [] };
   }
 
-  const context: host_context = {
-    host_version: "0.1.0",
-    plugin_id: "host",
-    project_id: snapshot.project_id ?? undefined,
-    revision_id: snapshot.revision_id ?? undefined
-  };
+  const context = build_host_context(snapshot);
 
   const constraints = await run_constraints_post_validate_hooks({
     plugins,
@@ -224,6 +264,63 @@ async function apply_plugin_hooks(args: {
   });
 
   return { violations: constraints.violations, instructions: render.instructions };
+}
+
+function make_stub_quote(currency: string, ruleset_version: string): quote {
+  return {
+    ruleset_version,
+    currency,
+    total: { currency, amount: 0 },
+    items: [],
+    meta: { stub: true }
+  };
+}
+
+async function recompute_quote(args: {
+  mode: Mode;
+  api_base_url: string;
+  project_id?: string;
+  revision_id?: string;
+  kitchen_state: unknown;
+  host_context: host_context;
+  pricing_context?: { region?: string; channel?: string };
+}): Promise<{ base_quote: quote; final_quote: quote; diagnostics: quote_merge_diagnostic[] }> {
+  let base_quote = make_stub_quote("USD", "ruleset-v0");
+  if (args.mode === "server" && args.project_id && args.revision_id) {
+    const api = create_api_core_client(args.api_base_url);
+    const res = await api.quote(args.project_id, args.revision_id);
+    if (res.ok) {
+      base_quote = res.data as quote;
+    }
+  }
+
+  const plugins = get_loaded_plugins();
+  if (plugins.length === 0) {
+    return { base_quote, final_quote: base_quote, diagnostics: [] };
+  }
+
+  const hook_result = await run_pricing_post_quote_hooks({
+    plugins,
+    context: args.host_context,
+    project_id: args.project_id,
+    revision_id: args.revision_id,
+    kitchen_state: args.kitchen_state,
+    base_quote,
+    pricing_context: args.pricing_context
+  });
+
+  const merged = merge_quote(base_quote, hook_result.contributions);
+  return {
+    base_quote,
+    final_quote: merged.quote,
+    diagnostics: [...hook_result.diagnostics, ...merged.diagnostics]
+  };
+}
+
+export async function set_pricing_channel(channel: string | undefined): Promise<void> {
+  const snapshot = get_snapshot();
+  set_state({ pricing_context: { ...snapshot.pricing_context, channel } });
+  await recompute();
 }
 
 async function move_first_object_x_local(new_x: number): Promise<void> {

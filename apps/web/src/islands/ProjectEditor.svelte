@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { app_state, init_demo, move_first_object_x, recompute, reset_demo } from "../lib/state";
+  import { app_state, init_demo, move_first_object_x, recompute, reset_demo, set_pricing_channel } from "../lib/state";
   import AgentChat from "./AgentChat.svelte";
   import PluginsPanel from "./PluginsPanel.svelte";
 
@@ -41,6 +41,17 @@
 
   async function setMode(mode: "server" | "local"): Promise<void> {
     await init_demo(mode, defaultApiBaseUrl, defaultOrchestratorBaseUrl);
+  }
+
+  function handle_channel_change(event: Event): void {
+    const target = event.currentTarget as HTMLSelectElement | null;
+    const value = target?.value ?? "";
+    void set_pricing_channel(value.length > 0 ? value : undefined);
+  }
+
+  function format_money(value: any): string {
+    if (!value || typeof value.amount !== "number") return "-";
+    return `${value.amount} ${value.currency ?? ""}`.trim();
   }
 
   onMount(async () => {
@@ -117,6 +128,52 @@
     {/if}
   </div>
 
+  <div class="quote">
+    <h3>Quote</h3>
+    <div class="row">
+      <label>
+        Channel
+        <select value={$app_state.pricing_context.channel ?? ""} on:change={handle_channel_change}>
+          <option value="">default</option>
+          <option value="rush">rush</option>
+        </select>
+      </label>
+    </div>
+
+    {#if $app_state.final_quote}
+      <p><strong>Total:</strong> {format_money($app_state.final_quote.total)}</p>
+      <details>
+        <summary>Line items ({$app_state.final_quote.items.length})</summary>
+        <ul>
+          {#each $app_state.final_quote.items as item}
+            <li>
+              <code>{item.code}</code> — {item.title} — {format_money(item.amount)}
+            </li>
+          {/each}
+        </ul>
+      </details>
+      <details>
+        <summary>Plugin diagnostics ({$app_state.quote_diagnostics.length})</summary>
+        <ul>
+          {#each $app_state.quote_diagnostics as diag}
+            <li>
+              <strong>{diag.plugin_id}</strong> — {diag.ok ? "ok" : "error"}
+              (items {diag.added_items}, adj {diag.added_adjustments})
+              {#if diag.errors.length > 0}
+                <div class="error">{diag.errors.join("; ")}</div>
+              {/if}
+              {#if diag.warnings.length > 0}
+                <div class="warn">{diag.warnings.join("; ")}</div>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      </details>
+    {:else}
+      <p class="meta">No quote yet.</p>
+    {/if}
+  </div>
+
   {#if $app_state.mode === "server"}
     <AgentChat />
   {/if}
@@ -178,6 +235,12 @@
     border: 1px solid #d1d5db;
     border-radius: 0.4rem;
   }
+  select {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.4rem;
+    background: #fff;
+  }
   button {
     padding: 0.5rem 0.75rem;
     border-radius: 0.4rem;
@@ -198,11 +261,24 @@
     color: #991b1b;
     font-size: 0.9rem;
   }
+  .warn {
+    color: #b45309;
+    font-size: 0.85rem;
+  }
   .violations ul {
     padding-left: 1rem;
     margin: 0.5rem 0 0;
   }
   .violations li {
+    margin-bottom: 0.5rem;
+  }
+  .quote {
+    margin-top: 1rem;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
     margin-bottom: 0.5rem;
   }
 </style>
