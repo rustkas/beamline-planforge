@@ -17,6 +17,7 @@
     "constraints": true,
     "solver": false,
     "pricing": false,
+    "render": true,
     "export": false,
     "ui": { "panels": [], "wizard_steps": [], "commands": [] }
   },
