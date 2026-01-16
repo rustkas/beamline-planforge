@@ -6,6 +6,8 @@ import type {
   constraints_post_validate_result,
   plugin_hook_request,
   plugin_hook_response,
+  pricing_post_quote_params,
+  pricing_post_quote_result,
   render_post_render_params,
   render_post_render_result
 } from "./hooks";
@@ -93,6 +95,10 @@ export interface plugin_hook_methods {
   "plugin.constraints.post_validate": {
     params: plugin_hook_request<constraints_post_validate_params>;
     result: plugin_hook_response<constraints_post_validate_result>;
+  };
+  "plugin.pricing.post_quote": {
+    params: plugin_hook_request<pricing_post_quote_params>;
+    result: plugin_hook_response<pricing_post_quote_result>;
   };
   "plugin.render.post_render": {
     params: plugin_hook_request<render_post_render_params>;
