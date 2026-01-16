@@ -36,6 +36,10 @@ function expect(condition: boolean, message: string): void {
   }
 }
 
+function is_local_id(id: string): boolean {
+  return id.startsWith("planforge://schemas/");
+}
+
 function is_local_ref(ref: string): boolean {
   return ref.startsWith("planforge://schemas/");
 }
@@ -64,6 +68,7 @@ async function main(): Promise<void> {
     expect(is_record(s), "Schema must be an object");
     const id = s.$id;
     expect(typeof id === "string" && id.length > 0, "Schema missing $id");
+    expect(is_local_id(id as string), `Schema $id must use planforge://schemas/ prefix: ${id}`);
     const file = schema_files[i];
 
     const existing = id_to_file.get(id as string);

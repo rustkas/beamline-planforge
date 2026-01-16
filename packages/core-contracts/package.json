@@ -7,9 +7,13 @@
     "ajv": "^8.12.0",
     "ajv-formats": "^3.0.1"
   },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  },
   "scripts": {
     "check:schemas": "bun scripts/check_schemas.ts",
     "test": "bun test",
-    "ci": "bun run check:schemas && bun test"
+    "ci": "bun run check:schemas && bun test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   }
 }
