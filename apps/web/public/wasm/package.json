@@ -1,0 +1,15 @@
+{
+  "name": "planforge-core-wasm",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "planforge_core_wasm_bg.wasm",
+    "planforge_core_wasm.js",
+    "planforge_core_wasm.d.ts"
+  ],
+  "main": "planforge_core_wasm.js",
+  "types": "planforge_core_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
