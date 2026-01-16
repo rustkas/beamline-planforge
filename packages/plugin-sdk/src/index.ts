@@ -24,3 +24,14 @@ export type {
   validate_request,
   validate_response
 } from "./host_api";
+export type {
+  rpc_error,
+  rpc_id,
+  rpc_request,
+  rpc_request_for,
+  rpc_response,
+  rpc_response_err,
+  rpc_response_for,
+  rpc_response_ok
+} from "./rpc";
+export { is_rpc_request, is_rpc_response, make_rpc_err, make_rpc_ok } from "./rpc";
