@@ -3,6 +3,9 @@ import { create_api_core_client } from "./api_core_client";
 import { create_ai_orchestrator_client, type TurnResult } from "./ai_orchestrator_client";
 import { create_core_client } from "./core_adapter";
 import { load_kitchen_state_fixture } from "./fixtures";
+import type { host_context, render_instruction } from "@planforge/plugin-sdk";
+import { run_constraints_post_validate_hooks, run_render_post_render_hooks } from "@planforge/plugin-runtime";
+import { get_loaded_plugins } from "./plugins/registry";
 
 export type Mode = "server" | "local";
 
@@ -17,6 +20,8 @@ export type Violation = {
 export type AppState = {
   kitchen_state: unknown | null;
   render_model: unknown | null;
+  render_instructions: render_instruction[];
+  base_violations: Violation[];
   violations: Violation[];
   project_id: string | null;
   revision_id: string | null;
@@ -31,6 +36,8 @@ export type AppState = {
 const initial_state: AppState = {
   kitchen_state: null,
   render_model: null,
+  render_instructions: [],
+  base_violations: [],
   violations: [],
   project_id: null,
   revision_id: null,
@@ -129,9 +136,19 @@ export async function recompute(): Promise<void> {
   set_state({ busy: true, error: null });
   try {
     const validation = (await core.validate_layout(snapshot.kitchen_state)) as { violations?: Violation[] };
-    const violations = validation?.violations ?? [];
+    const base_violations = validation?.violations ?? [];
     const render_model = await core.derive_render_model(snapshot.kitchen_state, "draft");
-    set_state({ violations, render_model });
+    const plugin_result = await apply_plugin_hooks({
+      kitchen_state: snapshot.kitchen_state,
+      base_violations,
+      render_model
+    });
+    set_state({
+      base_violations,
+      violations: plugin_result.violations,
+      render_model,
+      render_instructions: plugin_result.instructions
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Core call failed";
     set_state({ error: message });
@@ -152,10 +169,61 @@ async function recompute_server(): Promise<void> {
       set_state({ error: render.error.message });
       return;
     }
-    set_state({ render_model: render.data, violations: [] });
+    const plugin_result = await apply_plugin_hooks({
+      kitchen_state: snapshot.kitchen_state,
+      base_violations: snapshot.base_violations,
+      render_model: render.data
+    });
+    set_state({
+      render_model: render.data,
+      violations: plugin_result.violations,
+      render_instructions: plugin_result.instructions
+    });
   } finally {
     set_state({ busy: false });
   }
+}
+
+async function apply_plugin_hooks(args: {
+  kitchen_state: unknown;
+  base_violations: Violation[];
+  render_model: unknown;
+}): Promise<{ violations: Violation[]; instructions: render_instruction[] }> {
+  const snapshot = get_snapshot();
+  const plugins = get_loaded_plugins();
+  if (plugins.length === 0) {
+    return { violations: args.base_violations, instructions: [] };
+  }
+
+  const context: host_context = {
+    host_version: "0.1.0",
+    plugin_id: "host",
+    project_id: snapshot.project_id ?? undefined,
+    revision_id: snapshot.revision_id ?? undefined
+  };
+
+  const constraints = await run_constraints_post_validate_hooks({
+    plugins,
+    context,
+    project_id: snapshot.project_id ?? undefined,
+    revision_id: snapshot.revision_id ?? undefined,
+    kitchen_state: args.kitchen_state,
+    base_violations: args.base_violations,
+    mode: "full",
+    allow_suppress: false
+  });
+
+  const render = await run_render_post_render_hooks({
+    plugins,
+    context,
+    project_id: snapshot.project_id ?? undefined,
+    revision_id: snapshot.revision_id ?? undefined,
+    kitchen_state: args.kitchen_state,
+    render_model: args.render_model,
+    quality: "draft"
+  });
+
+  return { violations: constraints.violations, instructions: render.instructions };
 }
 
 async function move_first_object_x_local(new_x: number): Promise<void> {
@@ -214,10 +282,14 @@ async function move_first_object_x_server(new_x: number): Promise<void> {
       return;
     }
     if (result.data.violations.length > 0) {
-      set_state({ violations: result.data.violations as Violation[] });
+      set_state({
+        base_violations: result.data.violations as Violation[],
+        violations: result.data.violations as Violation[],
+        render_instructions: []
+      });
       return;
     }
-    set_state({ revision_id: result.data.new_revision_id, violations: [] });
+    set_state({ revision_id: result.data.new_revision_id, base_violations: [], violations: [] });
     write_demo_ids(snapshot.project_id, result.data.new_revision_id);
     await refresh_revision();
   } finally {
@@ -262,6 +334,7 @@ export async function init_demo(mode: Mode, api_base_url: string, orchestrator_b
   try {
     const api = create_api_core_client(api_base_url);
     const fixture = await load_kitchen_state_fixture();
+    let base_violations: Violation[] = [];
     let ids = read_demo_ids();
     if (!ids) {
       const created = await api.create_project(fixture);
@@ -270,7 +343,8 @@ export async function init_demo(mode: Mode, api_base_url: string, orchestrator_b
         return;
       }
       ids = { project_id: created.data.project_id, revision_id: created.data.revision_id };
-      set_state({ violations: (created.data.violations ?? []) as Violation[] });
+      base_violations = (created.data.violations ?? []) as Violation[];
+      set_state({ base_violations, violations: base_violations });
       write_demo_ids(ids.project_id, ids.revision_id);
     }
 
@@ -287,7 +361,8 @@ export async function init_demo(mode: Mode, api_base_url: string, orchestrator_b
       project_id: ids.project_id,
       revision_id: ids.revision_id,
       kitchen_state: revision.data.kitchen_state,
-      session_id
+      session_id,
+      base_violations
     });
     await recompute_server();
   } finally {
@@ -369,7 +444,7 @@ export async function run_agent_command(command: string): Promise<TurnResult | n
 
 async function handle_turn_result(result: TurnResult): Promise<TurnResult> {
   if (result.violations && result.violations.length > 0) {
-    set_state({ violations: result.violations as Violation[] });
+    set_state({ base_violations: result.violations as Violation[], violations: result.violations as Violation[] });
   }
 
   if (result.new_revision_id) {

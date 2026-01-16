@@ -2,7 +2,13 @@ type rpc_request = { id: string; method: string; params: unknown };
 type rpc_error = { code: string; message: string; details?: Record<string, unknown> };
 type rpc_response = { id: string; ok: true; result: unknown } | { id: string; ok: false; error: rpc_error };
 
-let plugin: { init?: (host: HostApi, params?: unknown) => Promise<unknown>; run?: (params: unknown, host: HostApi) => Promise<unknown> } | null = null;
+type plugin_handler = {
+  init?: (host: HostApi, params?: unknown) => Promise<unknown>;
+  handle?: (method: string, params: unknown, host: HostApi) => Promise<unknown>;
+  [method: string]: unknown;
+};
+
+let plugin: plugin_handler | null = null;
 
 const pending = new Map<string, { resolve: (value: unknown) => void; reject: (err: Error) => void }>();
 
@@ -49,13 +55,17 @@ const host_api: HostApi = {
 
 async function handle_plugin_request(message: rpc_request): Promise<void> {
   if (message.method === "plugin.init") {
-    const params = message.params as { plugin_url?: string };
-    if (!params?.plugin_url) {
-      postMessage(make_rpc_err(message.id, "plugin.init_error", "plugin_url missing"));
-      return;
+    const params = message.params as { context?: unknown };
+    if (!plugin) {
+      const url = new URL(self.location.href);
+      const plugin_url = url.searchParams.get("plugin_url");
+      if (!plugin_url) {
+        postMessage(make_rpc_err(message.id, "plugin.init_error", "plugin_url missing"));
+        return;
+      }
+      const mod = await import(/* @vite-ignore */ plugin_url);
+      plugin = (mod.default ?? mod) as plugin_handler;
     }
-    const mod = await import(/* @vite-ignore */ params.plugin_url);
-    plugin = (mod.default ?? mod) as typeof plugin;
     if (plugin?.init) {
       await plugin.init(host_api, params);
     }
@@ -63,12 +73,18 @@ async function handle_plugin_request(message: rpc_request): Promise<void> {
     return;
   }
 
-  if (message.method === "plugin.run") {
-    if (!plugin?.run) {
-      postMessage(make_rpc_err(message.id, "plugin.not_ready", "plugin.run not available"));
-      return;
-    }
-    const result = await plugin.run(message.params, host_api);
+  if (!plugin) {
+    postMessage(make_rpc_err(message.id, "plugin.not_ready", "plugin not initialized"));
+    return;
+  }
+  if (plugin.handle) {
+    const result = await plugin.handle(message.method, message.params, host_api);
+    postMessage(make_rpc_ok(message.id, result));
+    return;
+  }
+  const handler = plugin[message.method];
+  if (typeof handler === "function") {
+    const result = await (handler as (params: unknown, host: HostApi) => Promise<unknown>)(message.params, host_api);
     postMessage(make_rpc_ok(message.id, result));
     return;
   }
