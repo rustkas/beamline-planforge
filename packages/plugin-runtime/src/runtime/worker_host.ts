@@ -1,4 +1,4 @@
-import type { rpc_request, rpc_response } from "@planforge/plugin-sdk";
+import type { host_context, rpc_request, rpc_response } from "@planforge/plugin-sdk";
 import { make_rpc_err, make_rpc_ok } from "@planforge/plugin-sdk";
 import type { plugin_manifest } from "../manifest";
 import type { host_api_handler } from "../host_api/host_api_impl";
@@ -36,8 +36,8 @@ export class WorkerHost {
     });
   }
 
-  async init_plugin(plugin_url: string): Promise<unknown> {
-    return this.call_plugin("plugin.init", { plugin_url, manifest: this.manifest });
+  async init_plugin(context: host_context): Promise<unknown> {
+    return this.call_plugin("plugin.init", { context });
   }
 
   private handle_response(message: rpc_response): void {

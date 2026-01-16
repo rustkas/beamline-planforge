@@ -19,7 +19,14 @@ describe("plugin-runtime", () => {
         min_host_version: "0.1.0",
         compatibility: { core_contracts: "^0.1.0", host_api: "^0.1.0" }
       },
-      capabilities: { constraints: true, solver: false, pricing: false, export: false, ui: { panels: [], wizard_steps: [], commands: [] } },
+      capabilities: {
+        constraints: true,
+        solver: false,
+        pricing: false,
+        render: false,
+        export: false,
+        ui: { panels: [], wizard_steps: [], commands: [] }
+      },
       permissions: {
         network: { allow: false, allowlist: [] },
         storage: { allow: false, scopes: ["none"] },

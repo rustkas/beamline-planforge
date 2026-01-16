@@ -43,6 +43,12 @@ export function create_host_api(manifest: plugin_manifest, provider: host_api_pr
           }
           return provider.validate_layout(params);
         }
+        case "host.derive_render_model": {
+          if (!provider.derive_render_model) {
+            throw { code: "host.not_supported", message: "derive_render_model not supported" } satisfies rpc_error;
+          }
+          return provider.derive_render_model(params);
+        }
         default:
           throw { code: "host.unknown_method", message: `Unknown method ${method}` } satisfies rpc_error;
       }

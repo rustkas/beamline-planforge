@@ -1,3 +1,4 @@
+import type { host_context } from "@planforge/plugin-sdk";
 import type { plugin_manifest } from "../manifest";
 
 export type discovered_plugin = {
@@ -5,16 +6,9 @@ export type discovered_plugin = {
   base_url: string;
 };
 
-export type host_context = {
-  host_version: string;
-  plugin_id: string;
-  project_id?: string;
-  revision_id?: string;
-  locale?: string;
-};
-
 export type host_api_provider = {
   get_context: () => host_context;
-  get_project_state: () => Promise<unknown>;
+  get_project_state: () => Promise<{ kitchen_state: unknown; project_id?: string; revision_id?: string }>;
   validate_layout?: (kitchen_state: unknown) => Promise<unknown>;
+  derive_render_model?: (params: unknown) => Promise<unknown>;
 };

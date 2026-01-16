@@ -16,6 +16,18 @@ export type plugin_manifest = {
     kind: "web" | "wasm" | "server";
     entry: { js?: string; wasm?: string; module?: string };
   };
+  capabilities: {
+    constraints: boolean;
+    solver: boolean;
+    pricing: boolean;
+    render: boolean;
+    export: boolean;
+    ui: {
+      panels: unknown[];
+      wizard_steps: unknown[];
+      commands: unknown[];
+    };
+  };
   permissions: {
     network: { allow: boolean; allowlist: string[] };
     storage: { allow: boolean; scopes: string[] };
