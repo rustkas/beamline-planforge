@@ -1,0 +1,37 @@
+{
+  "$schema": "planforge://schemas/plugin-manifest.schema.json",
+  "manifest_version": "1.0",
+  "id": "com.planforge.demo.constraints",
+  "name": "Demo Constraints",
+  "version": "0.1.0",
+  "description": "Demo plugin for RPC and host bridge.",
+  "license": "Apache-2.0",
+  "publisher": { "name": "PlanForge" },
+  "runtime": {
+    "kind": "web",
+    "entry": { "js": "dist/loader.js" },
+    "min_host_version": "0.1.0",
+    "compatibility": { "core_contracts": "^0.1.0", "host_api": "^0.1.0" }
+  },
+  "capabilities": {
+    "constraints": true,
+    "solver": false,
+    "pricing": false,
+    "export": false,
+    "ui": { "panels": [], "wizard_steps": [], "commands": [] }
+  },
+  "permissions": {
+    "network": { "allow": false, "allowlist": [] },
+    "storage": { "allow": false, "scopes": ["none"] },
+    "project_data": { "read": true, "write_via_patches": false },
+    "catalog": { "read": false },
+    "pricing": { "read": false },
+    "orders": { "read": false, "write": false }
+  },
+  "integrity": {
+    "channel": "oss",
+    "signature": { "alg": "none", "value": "" },
+    "hashes": {}
+  },
+  "configuration_schema": { "type": "object" }
+}
