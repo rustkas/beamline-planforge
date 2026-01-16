@@ -1,5 +1,6 @@
 import Ajv from "ajv";
 import add_formats from "ajv-formats";
+import draft2020 from "ajv/dist/refs/json-schema-draft-2020-12.json";
 import { get_all_schemas } from "./load_schemas";
 
 export type schema_id =
@@ -28,6 +29,7 @@ export function create_ajv(): Ajv {
     allowUnionTypes: false
   });
 
+  ajv.addMetaSchema(draft2020);
   add_formats(ajv);
 
   for (const schema of get_all_schemas()) {
