@@ -13,6 +13,7 @@ describe("fixtures validate against schemas", () => {
     const fixture = await read_json("./fixtures/kitchen_state.fixture.json");
     const res = validate_with_ajv(ajv, "planforge://schemas/kitchen_state.schema.json", fixture);
     expect(res.ok).toBe(true);
+    expect(res.errors).toEqual([]);
   });
 
   test("RenderModel fixture is valid", async () => {
@@ -20,5 +21,6 @@ describe("fixtures validate against schemas", () => {
     const fixture = await read_json("./fixtures/render_model.fixture.json");
     const res = validate_with_ajv(ajv, "planforge://schemas/render_model.schema.json", fixture);
     expect(res.ok).toBe(true);
+    expect(res.errors).toEqual([]);
   });
 });
