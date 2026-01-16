@@ -3,6 +3,10 @@
   "compilerOptions": {
     "types": ["astro/client", "node"],
     "lib": ["ES2022", "DOM", "DOM.Iterable", "ESNext", "ESNext.Disposable"],
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "@planforge/plugin-runtime": ["../../packages/plugin-runtime/src/index.ts"],
+      "@planforge/plugin-sdk": ["../../packages/plugin-sdk/src/index.ts"]
+    }
   }
 }

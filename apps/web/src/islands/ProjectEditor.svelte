@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { app_state, init_demo, move_first_object_x, recompute, reset_demo } from "../lib/state";
   import AgentChat from "./AgentChat.svelte";
+  import PluginsPanel from "./PluginsPanel.svelte";
 
   export let projectId: string | null = null;
 
@@ -119,6 +120,8 @@
   {#if $app_state.mode === "server"}
     <AgentChat />
   {/if}
+
+  <PluginsPanel />
 </section>
 
 <style>
