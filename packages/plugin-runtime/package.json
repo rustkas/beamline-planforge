@@ -1,0 +1,21 @@
+{
+  "name": "@planforge/plugin-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@planforge/core-contracts": "workspace:*",
+    "@planforge/plugin-sdk": "workspace:*"
+  },
+  "devDependencies": {
+    "bun-types": "^1.3.6",
+    "typescript": "^5.4.0"
+  }
+}

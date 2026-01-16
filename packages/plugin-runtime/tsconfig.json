@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["bun-types"],
+    "skipLibCheck": true,
+    "paths": {
+      "@planforge/core-contracts": ["../../packages/core-contracts/src/index.ts"],
+      "@planforge/plugin-sdk": ["../../packages/plugin-sdk/src/index.ts"]
+    }
+  }
+}
