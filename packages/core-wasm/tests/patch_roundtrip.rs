@@ -1,4 +1,4 @@
-use planforge_core_wasm::validate_layout_json;
+use planforge_core_wasm::{apply_patch_json, derive_render_model_json};
 
 fn kitchen_state_fixture() -> String {
     r#"{
@@ -43,19 +43,23 @@ fn kitchen_state_fixture() -> String {
 }
 
 #[test]
-fn validate_layout_accepts_valid_fixture() {
-    let response = validate_layout_json(kitchen_state_fixture());
-    let value: serde_json::Value = serde_json::from_str(&response).unwrap();
-    let violations = value.get("violations").and_then(|v| v.as_array()).unwrap();
-    assert!(violations.is_empty(), "unexpected violations: {}", response);
+fn apply_patch_updates_position() {
+    let patch = r#"{
+  "ops": [
+    { "op": "replace", "path": "/layout/objects/0/transform_mm/position_mm/x", "value": 1200 }
+  ]
+}"#;
+
+    let updated = apply_patch_json(kitchen_state_fixture(), patch.to_string());
+    let value: serde_json::Value = serde_json::from_str(&updated).unwrap();
+    let x = value["layout"]["objects"][0]["transform_mm"]["position_mm"]["x"].as_i64().unwrap();
+    assert_eq!(x, 1200);
 }
 
 #[test]
-fn validate_layout_reports_out_of_bounds() {
-    let mut fixture = kitchen_state_fixture();
-    fixture = fixture.replace("\"x\": 1000", "\"x\": 4000");
-    let response = validate_layout_json(fixture);
-    let value: serde_json::Value = serde_json::from_str(&response).unwrap();
-    let violations = value.get("violations").and_then(|v| v.as_array()).unwrap();
-    assert!(!violations.is_empty());
+fn derive_render_model_has_nodes_per_object() {
+    let render_json = derive_render_model_json(kitchen_state_fixture(), "draft".to_string());
+    let value: serde_json::Value = serde_json::from_str(&render_json).unwrap();
+    let nodes = value.get("nodes").and_then(|v| v.as_array()).unwrap();
+    assert_eq!(nodes.len(), 1);
 }
