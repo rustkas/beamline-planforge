@@ -32,6 +32,7 @@ export interface schema_validation_result {
 
 export interface host_api {
   get_context(): Promise<host_context>;
+  get_project_state(): Promise<{ kitchen_state: unknown; project_id?: string; revision_id?: string }>;
   log(
     level: "debug" | "info" | "warn" | "error",
     message: string,
@@ -48,6 +49,7 @@ export interface host_api {
 
 export type host_api_method =
   | "get_context"
+  | "get_project_state"
   | "log"
   | "validate_schema"
   | "validate_layout"
@@ -59,6 +61,7 @@ export type host_api_method =
 
 export interface host_api_methods {
   get_context: { params: void; result: host_context };
+  get_project_state: { params: void; result: { kitchen_state: unknown; project_id?: string; revision_id?: string } };
   log: {
     params: { level: "debug" | "info" | "warn" | "error"; message: string; fields?: Record<string, unknown> };
     result: void;
