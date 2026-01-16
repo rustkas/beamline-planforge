@@ -208,7 +208,7 @@
         "action": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["kind"],
+          "required": ["kind", "method"],
           "properties": {
             "kind": { "enum": ["rpc"] },
             "method": { "type": "string", "minLength": 1 }
