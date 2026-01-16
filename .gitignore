@@ -12,6 +12,7 @@ pkg/
 dist/
 .build/
 .out/
+.astro/
 
 # Env
 .env

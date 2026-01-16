@@ -1,6 +1,8 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["astro/client"]
+    "types": ["astro/client", "node"],
+    "lib": ["ES2022", "DOM", "DOM.Iterable", "ESNext", "ESNext.Disposable"],
+    "skipLibCheck": true
   }
 }

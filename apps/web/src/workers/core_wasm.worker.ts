@@ -25,7 +25,8 @@ let wasmModule: null | {
 
 async function loadWasm(): Promise<typeof wasmModule> {
   if (!wasmModule) {
-    const mod = await import("/wasm/planforge_core_wasm.js");
+    const wasmPath = "/wasm/planforge_core_wasm.js";
+    const mod = await import(/* @vite-ignore */ wasmPath);
     if (typeof mod.default === "function") {
       await mod.default();
     }
