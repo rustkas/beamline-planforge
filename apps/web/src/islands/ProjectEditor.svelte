@@ -1,8 +1,10 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { app_state, load_fixture, move_first_object_x, recompute } from "../lib/state";
+  import { app_state, init_demo, move_first_object_x, recompute, reset_demo } from "../lib/state";
 
   export let projectId: string | null = null;
+
+  const defaultApiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
   let xInput = "";
   let inputError = "";
@@ -34,9 +36,15 @@
     await move_first_object_x(parsed);
   }
 
+  async function setMode(mode: "server" | "local"): Promise<void> {
+    await init_demo(mode, defaultApiBaseUrl);
+  }
+
   onMount(async () => {
     if (projectId === "demo") {
-      await load_fixture();
+      const storedMode = localStorage.getItem("planforge_demo_mode");
+      const mode = storedMode === "local" ? "local" : "server";
+      await init_demo(mode, defaultApiBaseUrl);
     }
   });
 </script>
@@ -49,11 +57,33 @@
 
   <div class="summary">{getSummary($app_state.kitchen_state)}</div>
 
+  <div class="meta-block">
+    <div>Mode: <strong>{$app_state.mode}</strong></div>
+    {#if $app_state.mode === "server"}
+      <div>API: {$app_state.api_base_url}</div>
+      <div>Project: {$app_state.project_id ?? "-"}</div>
+      <div>Revision: {$app_state.revision_id ?? "-"}</div>
+    {/if}
+  </div>
+
   {#if $app_state.error}
     <div class="error">{$app_state.error}</div>
   {/if}
 
   <div class="controls">
+    <div class="mode-toggle">
+      <label>
+        <input type="radio" name="mode" value="server" checked={$app_state.mode === "server"} on:change={() => setMode("server")} />
+        Server
+      </label>
+      <label>
+        <input type="radio" name="mode" value="local" checked={$app_state.mode === "local"} on:change={() => setMode("local")} />
+        Local
+      </label>
+      {#if $app_state.mode === "server"}
+        <button type="button" class="secondary" on:click={reset_demo} disabled={$app_state.busy}>Reset demo</button>
+      {/if}
+    </div>
     <label>
       First object X (mm)
       <input type="number" bind:value={xInput} />
@@ -110,6 +140,24 @@
     gap: 0.5rem;
     margin-bottom: 1rem;
   }
+  .mode-toggle {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: center;
+  }
+  .mode-toggle label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .meta-block {
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+    color: #374151;
+    display: grid;
+    gap: 0.25rem;
+  }
   label {
     display: grid;
     gap: 0.25rem;
@@ -127,6 +175,10 @@
     background: #111827;
     color: #fef3c7;
     cursor: pointer;
+  }
+  button.secondary {
+    background: #fef3c7;
+    color: #111827;
   }
   button:disabled {
     opacity: 0.6;
