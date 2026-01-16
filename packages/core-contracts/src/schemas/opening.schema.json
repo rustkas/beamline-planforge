@@ -17,7 +17,12 @@
   "allOf": [
     {
       "if": { "properties": { "kind": { "const": "window" } }, "required": ["kind"] },
-      "then": { "required": ["sill_height_mm"] }
+      "then": {
+        "properties": {
+          "sill_height_mm": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["sill_height_mm"]
+      }
     }
   ]
 }
