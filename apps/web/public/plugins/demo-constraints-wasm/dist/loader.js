@@ -12,6 +12,10 @@ function make_err(id, code, message, details) {
   return { id, ok: false, error: { code, message, details } };
 }
 
+function round_2(n) {
+  return Math.round(n * 100) / 100;
+}
+
 let next_id = 1;
 const inflight = new Map();
 
@@ -139,6 +143,47 @@ self.onmessage = async (ev) => {
         : [];
 
       self.postMessage(make_ok(id, { ok: true, result: { instructions } }));
+      return;
+    }
+
+    if (method === "plugin.pricing.post_quote") {
+      const req = params;
+      const hook_params = req && req.params ? req.params : null;
+      const quote = hook_params && hook_params.quote ? hook_params.quote : null;
+      const pricing_context = hook_params && hook_params.pricing_context ? hook_params.pricing_context : {};
+
+      const currency = quote && typeof quote.currency === "string" ? quote.currency : "USD";
+      const base_total =
+        quote && quote.total && typeof quote.total.amount === "number" ? quote.total.amount : 0;
+
+      const design_fee = {
+        code: "design_fee",
+        title: "Design fee",
+        qty: 1,
+        unit_price: { currency, amount: 49.0 },
+        amount: { currency, amount: 49.0 },
+        meta: { plugin: "com.planforge.demo.constraints" }
+      };
+
+      const is_rush = pricing_context && pricing_context.channel === "rush";
+      const rush_amount = is_rush ? round_2(Math.abs(base_total) * 0.1) : 0;
+
+      const adjustments = [];
+      if (is_rush && rush_amount > 0) {
+        adjustments.push({
+          kind: "surcharge",
+          code: "rush_surcharge",
+          title: "Rush surcharge (10%)",
+          amount: { currency, amount: rush_amount }
+        });
+      }
+
+      self.postMessage(
+        make_ok(id, {
+          ok: true,
+          result: { add_items: [design_fee], adjustments }
+        })
+      );
       return;
     }
 

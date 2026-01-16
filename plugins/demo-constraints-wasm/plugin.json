@@ -16,7 +16,7 @@
   "capabilities": {
     "constraints": true,
     "solver": false,
-    "pricing": false,
+    "pricing": true,
     "render": true,
     "export": false,
     "ui": { "panels": [], "wizard_steps": [], "commands": [] }
