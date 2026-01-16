@@ -1,10 +1,12 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { app_state, init_demo, move_first_object_x, recompute, reset_demo } from "../lib/state";
+  import AgentChat from "./AgentChat.svelte";
 
   export let projectId: string | null = null;
 
   const defaultApiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+  const defaultOrchestratorBaseUrl = import.meta.env.PUBLIC_ORCHESTRATOR_BASE_URL ?? "http://localhost:3002";
 
   let xInput = "";
   let inputError = "";
@@ -37,14 +39,14 @@
   }
 
   async function setMode(mode: "server" | "local"): Promise<void> {
-    await init_demo(mode, defaultApiBaseUrl);
+    await init_demo(mode, defaultApiBaseUrl, defaultOrchestratorBaseUrl);
   }
 
   onMount(async () => {
     if (projectId === "demo") {
       const storedMode = localStorage.getItem("planforge_demo_mode");
       const mode = storedMode === "local" ? "local" : "server";
-      await init_demo(mode, defaultApiBaseUrl);
+      await init_demo(mode, defaultApiBaseUrl, defaultOrchestratorBaseUrl);
     }
   });
 </script>
@@ -61,6 +63,7 @@
     <div>Mode: <strong>{$app_state.mode}</strong></div>
     {#if $app_state.mode === "server"}
       <div>API: {$app_state.api_base_url}</div>
+      <div>Orchestrator: {$app_state.orchestrator_base_url}</div>
       <div>Project: {$app_state.project_id ?? "-"}</div>
       <div>Revision: {$app_state.revision_id ?? "-"}</div>
     {/if}
@@ -112,6 +115,10 @@
       </ul>
     {/if}
   </div>
+
+  {#if $app_state.mode === "server"}
+    <AgentChat />
+  {/if}
 </section>
 
 <style>
