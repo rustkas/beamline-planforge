@@ -38,7 +38,7 @@ export function create_ajv(): Ajv2020 {
   return ajv;
 }
 
-export function validate_with_ajv(ajv: Ajv, schema: schema_id, value: unknown): validation_result {
+export function validate_with_ajv(ajv: Ajv2020, schema: schema_id, value: unknown): validation_result {
   const validate = ajv.getSchema(schema);
   if (!validate) {
     return { ok: false, errors: [`schema not found: ${schema}`] };
