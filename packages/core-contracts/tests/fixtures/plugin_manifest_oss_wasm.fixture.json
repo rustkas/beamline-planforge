@@ -27,6 +27,7 @@
     "constraints": true,
     "solver": false,
     "pricing": false,
+    "render": false,
     "export": false,
     "ui": {
       "panels": [],

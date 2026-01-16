@@ -141,11 +141,12 @@
     "capabilities": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["constraints", "solver", "pricing", "export", "ui"],
+      "required": ["constraints", "solver", "pricing", "render", "export", "ui"],
       "properties": {
         "constraints": { "type": "boolean" },
         "solver": { "type": "boolean" },
         "pricing": { "type": "boolean" },
+        "render": { "type": "boolean" },
         "export": { "type": "boolean" },
         "ui": { "$ref": "#/$defs/ui_capabilities" }
       }
