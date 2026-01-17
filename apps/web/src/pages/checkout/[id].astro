@@ -1,9 +1,15 @@
 ---
+import CheckoutPanel from "../../islands/CheckoutPanel.svelte";
+
 const { id } = Astro.params;
 ---
-<html>
-  <head><title>Checkout {id}</title></head>
+<html lang="en">
+  <head>
+    <title>Checkout {id}</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
   <body>
-    <h1>Checkout {id}</h1>
+    <CheckoutPanel client:load projectId={id} />
   </body>
 </html>

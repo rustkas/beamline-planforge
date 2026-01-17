@@ -45,6 +45,11 @@ type QuoteResponse = {
   }>;
 };
 
+type OrderResponse = {
+  order_id: string;
+  status: string;
+};
+
 function make_error(status: number, message: string, body?: unknown): ApiError {
   return { code: `http.${status}`, message, status, body };
 }
@@ -89,6 +94,25 @@ export function create_api_core_client(base_url: string) {
         body: JSON.stringify({ project_id, revision_id, ruleset_version })
       }),
     get_quote: (quote_id: string) => request<QuoteResponse>(`/quotes/${quote_id}`),
+    create_order: (
+      payload: {
+        project_id: string;
+        revision_id: string;
+        quote_id: string;
+        customer: { name: string; email: string; phone?: string };
+        delivery: { line1: string; city: string; country: string };
+      },
+      idempotency_key?: string
+    ) =>
+      request<OrderResponse>("/orders", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(idempotency_key ? { "idempotency-key": idempotency_key } : {})
+        },
+        body: JSON.stringify(payload)
+      }),
+    get_order: (order_id: string) => request<unknown>(`/orders/${order_id}`),
     quote: (project_id: string, revision_id: string) =>
       request<QuoteResponse>(`/projects/${project_id}/revisions/${revision_id}/quote`, {
         method: "POST",
