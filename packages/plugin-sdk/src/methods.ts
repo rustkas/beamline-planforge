@@ -1,6 +1,7 @@
 import type { host_context } from "./context";
 import type { proposed_patch } from "./patch";
 import type { violation } from "./violations";
+import type { license_context } from "./licensing";
 import type {
   constraints_post_validate_params,
   constraints_post_validate_result,
@@ -60,6 +61,10 @@ export interface host_api_methods {
   "host.get_project_state": {
     params: void;
     result: host_get_project_state_result;
+  };
+  "host.get_license_context": {
+    params: void;
+    result: license_context;
   };
   "host.validate_layout": {
     params: validate_request;

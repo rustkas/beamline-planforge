@@ -1,6 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { app_state, init_demo, move_first_object_x, recompute, reset_demo, set_pricing_channel } from "../lib/state";
+  import {
+    app_state,
+    init_demo,
+    move_first_object_x,
+    recompute,
+    reset_demo,
+    set_pricing_channel,
+    set_render_quality
+  } from "../lib/state";
   import AgentChat from "./AgentChat.svelte";
   import PluginsPanel from "./PluginsPanel.svelte";
 
@@ -47,6 +55,12 @@
     const target = event.currentTarget as HTMLSelectElement | null;
     const value = target?.value ?? "";
     void set_pricing_channel(value.length > 0 ? value : undefined);
+  }
+
+  function handle_quality_change(event: Event): void {
+    const target = event.currentTarget as HTMLSelectElement | null;
+    const value = target?.value === "quality" ? "quality" : "draft";
+    void set_render_quality(value);
   }
 
   function format_money(value: any): string {
@@ -102,6 +116,13 @@
     <label>
       First object X (mm)
       <input type="number" bind:value={xInput} />
+    </label>
+    <label>
+      Render quality
+      <select value={$app_state.render_quality} on:change={handle_quality_change}>
+        <option value="draft">draft</option>
+        <option value="quality">quality</option>
+      </select>
     </label>
     <button on:click={applyX} disabled={$app_state.busy}>Apply</button>
     <button on:click={recompute} disabled={$app_state.busy}>Recompute</button>

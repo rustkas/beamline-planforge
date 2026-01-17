@@ -13,10 +13,19 @@ describe("pricing hooks", () => {
   test("collects contributions in deterministic order", async () => {
     const plugin_a: loaded_plugin = {
       manifest: {
+        manifest_version: "1.0",
         id: "a.plugin",
         name: "A",
         version: "0.1.0",
-        runtime: { kind: "web", entry: { js: "dist/loader.js" } },
+        description: "A",
+        license: "Apache-2.0",
+        publisher: { name: "PlanForge" },
+        runtime: {
+          kind: "web",
+          entry: { js: "dist/loader.js" },
+          min_host_version: "0.1.0",
+          compatibility: { core_contracts: "^0.1.0", host_api: "^0.1.0" }
+        },
         capabilities: {
           constraints: false,
           solver: false,
@@ -25,6 +34,12 @@ describe("pricing hooks", () => {
           export: false,
           ui: { panels: [], wizard_steps: [], commands: [] }
         },
+        integrity: {
+          channel: "oss",
+          signature: { alg: "none", value: "" },
+          hashes: {}
+        },
+        configuration_schema: { type: "object" },
         permissions: {
           network: { allow: false, allowlist: [] },
           storage: { allow: false, scopes: ["none"] },
@@ -54,10 +69,19 @@ describe("pricing hooks", () => {
 
     const plugin_b: loaded_plugin = {
       manifest: {
+        manifest_version: "1.0",
         id: "b.plugin",
         name: "B",
         version: "0.1.0",
-        runtime: { kind: "web", entry: { js: "dist/loader.js" } },
+        description: "B",
+        license: "Apache-2.0",
+        publisher: { name: "PlanForge" },
+        runtime: {
+          kind: "web",
+          entry: { js: "dist/loader.js" },
+          min_host_version: "0.1.0",
+          compatibility: { core_contracts: "^0.1.0", host_api: "^0.1.0" }
+        },
         capabilities: {
           constraints: false,
           solver: false,
@@ -66,6 +90,12 @@ describe("pricing hooks", () => {
           export: false,
           ui: { panels: [], wizard_steps: [], commands: [] }
         },
+        integrity: {
+          channel: "oss",
+          signature: { alg: "none", value: "" },
+          hashes: {}
+        },
+        configuration_schema: { type: "object" },
         permissions: {
           network: { allow: false, allowlist: [] },
           storage: { allow: false, scopes: ["none"] },

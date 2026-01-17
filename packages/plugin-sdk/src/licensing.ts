@@ -4,6 +4,7 @@ export type license_error_code =
   | "license.entitlement_invalid"
   | "license.signature_invalid"
   | "license.hash_mismatch"
+  | "license.revoked"
   | "license.expired"
   | "license.not_yet_valid"
   | "license.trust_store_missing"
@@ -30,4 +31,14 @@ export type license_decision = {
   allow_load: boolean;
   allow_capabilities: license_capabilities;
   diagnostics: license_diagnostic[];
+};
+
+export type license_context = {
+  ok: boolean;
+  allow_capabilities: license_capabilities;
+  exp?: number;
+  refresh_at?: number;
+  last_good_refresh_at?: number;
+  revoked?: boolean;
+  diagnostics?: license_diagnostic[];
 };

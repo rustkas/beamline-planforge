@@ -1,0 +1,8 @@
+{
+  "materials": [
+    { "id": "mat_front_white", "color": "#f8f5f0", "roughness": 0.7 },
+    { "id": "mat_body_white", "color": "#f0ede7", "roughness": 0.8 },
+    { "id": "mat_top_oak", "color": "#b08968", "roughness": 0.55 },
+    { "id": "mat_default", "color": "#c9b8a7", "roughness": 0.75 }
+  ]
+}

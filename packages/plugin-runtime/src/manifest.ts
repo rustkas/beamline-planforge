@@ -9,6 +9,7 @@ export function validate_manifest(manifest: unknown): manifest_validation {
 }
 
 export type plugin_manifest = {
+  $schema?: string;
   manifest_version: string;
   id: string;
   name: string;

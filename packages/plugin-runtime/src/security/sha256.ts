@@ -13,9 +13,5 @@ export async function sha256_hex(bytes: Uint8Array): Promise<string> {
     const digest = await globalThis.crypto.subtle.digest("SHA-256", to_buffer_source(bytes));
     return to_hex(new Uint8Array(digest));
   }
-
-  const { createHash } = await import("node:crypto");
-  const hash = createHash("sha256");
-  hash.update(Buffer.from(bytes));
-  return hash.digest("hex");
+  throw new Error("WebCrypto subtle is not available for sha256");
 }

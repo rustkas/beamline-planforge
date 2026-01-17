@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/wasi_pricing_output.schema.json",
+  "title": "WasiPricingOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "add_items": {
+      "type": "array",
+      "items": { "$ref": "planforge://schemas/quote_item.schema.json" }
+    },
+    "adjustments": {
+      "type": "array",
+      "items": { "$ref": "planforge://schemas/pricing_adjustment.schema.json" }
+    }
+  }
+}

@@ -8,7 +8,7 @@ fn violations_response(violations: Vec<Violation>) -> String {
     serde_json::to_string(&json!({ "violations": violations })).unwrap_or_else(|_| "{\"violations\":[]}".to_string())
 }
 
-pub fn derive_render_model_json(kitchen_state_json: String, _quality: String) -> String {
+pub fn derive_render_model_json(kitchen_state_json: String, quality: String) -> String {
     let kitchen_state: KitchenState = match serde_json::from_str(&kitchen_state_json) {
         Ok(value) => value,
         Err(err) => {
@@ -25,9 +25,12 @@ pub fn derive_render_model_json(kitchen_state_json: String, _quality: String) ->
 
     for obj in &kitchen_state.layout.objects {
         let gltf_key = obj.catalog_item_id.clone();
-        gltf_assets.entry(gltf_key.clone()).or_insert_with(|| GltfAssetRef {
-            asset_id: format!("asset_{}", gltf_key),
-            uri: format!("assets/models/{}.glb", gltf_key),
+        gltf_assets.entry(gltf_key.clone()).or_insert_with(|| {
+            let lod = if quality == "quality" { 0 } else { 1 };
+            GltfAssetRef {
+                asset_id: format!("asset_{}", gltf_key),
+                uri: format!("assets/models/{}/lod{}.glb", gltf_key, lod),
+            }
         });
 
         let x_m = obj.transform_mm.position_mm.x as f64 / 1000.0;
@@ -45,7 +48,7 @@ pub fn derive_render_model_json(kitchen_state_json: String, _quality: String) ->
             gltf_key,
             transform,
             material_overrides: obj.material_slots.clone(),
-            lod: None,
+            lod: Some(if quality == "quality" { 0 } else { 1 }),
             pickable: Some(true),
         });
     }

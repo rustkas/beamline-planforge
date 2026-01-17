@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { app_state } from "../lib/state";
+  import { create_license_client, type LicenseStatus } from "../lib/license_client";
   import {
     create_host_api,
     validate_manifest,
@@ -37,6 +38,8 @@
 
   let trustStore: trust_store | null = null;
   let entitlementToken = "";
+  let licenseStatus: LicenseStatus | null = null;
+  let refreshTimer: number | null = null;
 
   function entitlement_key(): string {
     return "planforge.entitlement_token";
@@ -49,9 +52,15 @@
   async function load_trust(): Promise<void> {
     if (trustStore) return;
     try {
-      trustStore = await load_trust_store("/trust/trust_store.json");
+      const license = create_license_client($app_state.api_base_url);
+      const remote = (await license.trust_store()) as trust_store;
+      trustStore = remote;
     } catch {
-      trustStore = null;
+      try {
+        trustStore = await load_trust_store("/trust/trust_store.json");
+      } catch {
+        trustStore = null;
+      }
     }
   }
 
@@ -107,6 +116,7 @@
   async function load_plugin(entry: PluginEntry): Promise<void> {
     try {
       await load_trust();
+      await refresh_status();
       const res = await fetch(entry.manifest_url);
       const manifest = (await res.json()) as plugin_manifest;
       const validation = validate_manifest(manifest);
@@ -124,7 +134,8 @@
         trust_store: trustStore,
         entitlement_token: entitlementToken.length > 0 ? entitlementToken : null,
         now_epoch_seconds: now,
-        last_online_ok_epoch: read_last_ok() ?? undefined
+        last_online_ok_epoch: read_last_ok() ?? undefined,
+        revoked_jtis: licenseStatus?.revoked && licenseStatus.token_jti ? [licenseStatus.token_jti] : []
       });
       entry.license = decision;
       if (!decision.allow_load) {
@@ -144,6 +155,23 @@
           plugin_id: manifest.id,
           project_id: $app_state.project_id ?? undefined,
           revision_id: $app_state.revision_id ?? undefined
+        }),
+        get_license_context: async () => ({
+          ok: entry.license?.ok ?? false,
+          allow_capabilities:
+            entry.license?.allow_capabilities ?? {
+              constraints: false,
+              pricing: false,
+              render: false,
+              export: false,
+              solver: false,
+              ui: false
+            },
+          exp: licenseStatus?.exp,
+          refresh_at: licenseStatus?.refresh_at,
+          last_good_refresh_at: licenseStatus?.last_good_refresh_at,
+          revoked: licenseStatus?.revoked ?? false,
+          diagnostics: entry.license?.diagnostics
         }),
         get_project_state: async () => {
           if ($app_state.mode === "server" && $app_state.project_id && $app_state.revision_id) {
@@ -260,10 +288,22 @@
     for (const entry of plugins) {
       void load_plugin(entry);
     }
+
+    refreshTimer = window.setInterval(() => {
+      void refresh_status();
+    }, 60_000);
+  });
+
+  onDestroy(() => {
+    if (refreshTimer) {
+      clearInterval(refreshTimer);
+      refreshTimer = null;
+    }
   });
 
   async function apply_entitlement(): Promise<void> {
     write_entitlement(entitlementToken);
+    await refresh_status();
     for (const entry of plugins) {
       entry.status = "idle";
       entry.error = undefined;
@@ -273,6 +313,47 @@
       entry.license = undefined;
       remove_loaded_plugin(entry.id);
       await load_plugin(entry);
+    }
+  }
+
+  async function refresh_status(): Promise<void> {
+    if (!entitlementToken) {
+      licenseStatus = null;
+      return;
+    }
+
+    const license = create_license_client($app_state.api_base_url);
+    try {
+      const status = await license.status(entitlementToken);
+      licenseStatus = status;
+      if (status.last_good_refresh_at) {
+        write_last_ok(status.last_good_refresh_at);
+      }
+      const now = Math.floor(Date.now() / 1000);
+      if (status.refresh_at && now >= status.refresh_at) {
+        const refreshed = await license.refresh(entitlementToken);
+        if (refreshed.ok && refreshed.token) {
+          entitlementToken = refreshed.token;
+          write_entitlement(entitlementToken);
+          if (refreshed.last_good_refresh_at) {
+            write_last_ok(refreshed.last_good_refresh_at);
+          }
+          licenseStatus = {
+            ...status,
+            exp: refreshed.exp ?? status.exp,
+            refresh_at: refreshed.refresh_at ?? status.refresh_at,
+            last_good_refresh_at: refreshed.last_good_refresh_at ?? status.last_good_refresh_at
+          };
+        } else if (refreshed.error) {
+          licenseStatus = { ...status, ok: false, allowed: false, error: refreshed.error };
+        }
+      }
+    } catch (error) {
+      licenseStatus = {
+        ok: false,
+        allowed: false,
+        error: { code: "license.refresh_failed", message: error instanceof Error ? error.message : "Refresh failed" }
+      };
     }
   }
 </script>
@@ -289,6 +370,17 @@
       <textarea rows="3" bind:value={entitlementToken} placeholder="Paste JWT token"></textarea>
     </label>
     <button class="secondary" on:click={apply_entitlement}>Apply token</button>
+    {#if licenseStatus}
+      <div class="meta">
+        {licenseStatus.allowed ? "License active" : "License inactive"}
+        {#if licenseStatus.exp}
+          · exp {licenseStatus.exp}
+        {/if}
+      </div>
+      {#if licenseStatus.error}
+        <div class="error">{licenseStatus.error.code}: {licenseStatus.error.message}</div>
+      {/if}
+    {/if}
   </div>
 
   {#each plugins as plugin}

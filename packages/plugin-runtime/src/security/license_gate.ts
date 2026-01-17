@@ -45,6 +45,7 @@ export type license_gate_args = {
   entitlement_token?: string | null;
   now_epoch_seconds?: number;
   last_online_ok_epoch?: number;
+  revoked_jtis?: string[];
 };
 
 export async function verify_plugin_license(args: license_gate_args): Promise<license_decision> {
@@ -143,6 +144,12 @@ export async function verify_plugin_license(args: license_gate_args): Promise<li
 
   if (!verify.ok) {
     diagnostics.push({ code: "license.entitlement_invalid", message: verify.message, details: verify.details });
+    return { ok: false, allow_load: false, allow_capabilities: empty_caps(), diagnostics };
+  }
+
+  const revoked = args.revoked_jtis ?? [];
+  if (verify.claims.jti && revoked.includes(verify.claims.jti)) {
+    diagnostics.push({ code: "license.revoked", message: "Entitlement revoked", details: { jti: verify.claims.jti } });
     return { ok: false, allow_load: false, allow_capabilities: empty_caps(), diagnostics };
   }
 

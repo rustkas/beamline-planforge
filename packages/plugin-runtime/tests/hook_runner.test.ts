@@ -6,10 +6,19 @@ import { run_constraints_post_validate_hooks, run_render_post_render_hooks } fro
 
 function make_manifest(id: string, capabilities: { constraints?: boolean; render?: boolean }): plugin_manifest {
   return {
+    manifest_version: "1.0",
     id,
     name: "demo",
     version: "0.1.0",
-    runtime: { kind: "web", entry: { js: "dist/loader.js" } },
+    description: "demo",
+    license: "Apache-2.0",
+    publisher: { name: "PlanForge" },
+    runtime: {
+      kind: "web",
+      entry: { js: "dist/loader.js" },
+      min_host_version: "0.1.0",
+      compatibility: { core_contracts: "^0.1.0", host_api: "^0.1.0" }
+    },
     capabilities: {
       constraints: capabilities.constraints ?? false,
       solver: false,
@@ -18,6 +27,12 @@ function make_manifest(id: string, capabilities: { constraints?: boolean; render
       export: false,
       ui: { panels: [], wizard_steps: [], commands: [] }
     },
+    integrity: {
+      channel: "oss",
+      signature: { alg: "none", value: "" },
+      hashes: {}
+    },
+    configuration_schema: { type: "object" },
     permissions: {
       network: { allow: false, allowlist: [] },
       storage: { allow: false, scopes: ["none"] },

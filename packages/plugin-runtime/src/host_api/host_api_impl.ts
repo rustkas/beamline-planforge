@@ -37,6 +37,9 @@ export function create_host_api(manifest: plugin_manifest, provider: host_api_pr
           if (!can_read_project_data(manifest)) throw permission_error();
           return provider.get_project_state();
         }
+        case "host.get_license_context": {
+          return provider.get_license_context();
+        }
         case "host.validate_layout": {
           if (!provider.validate_layout) {
             throw { code: "host.not_supported", message: "validate_layout not supported" } satisfies rpc_error;

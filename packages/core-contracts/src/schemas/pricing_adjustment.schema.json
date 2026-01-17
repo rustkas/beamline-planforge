@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/pricing_adjustment.schema.json",
+  "title": "PricingAdjustment",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kind", "code", "title", "amount"],
+  "properties": {
+    "kind": { "enum": ["discount", "surcharge"] },
+    "code": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "amount": { "$ref": "planforge://schemas/money.schema.json" },
+    "applies_to": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "item_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

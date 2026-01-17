@@ -1,6 +1,6 @@
 ---
 import ProjectEditor from "../../islands/ProjectEditor.svelte";
-import Viewer3D from "../../islands/Viewer3D.svelte";
+import Viewer3DLazy from "../../islands/Viewer3DLazy.svelte";
 
 const { id } = Astro.params;
 ---
@@ -16,7 +16,7 @@ const { id } = Astro.params;
         <ProjectEditor client:load projectId={id} />
       </section>
       <section class="right">
-        <Viewer3D client:load />
+        <Viewer3DLazy client:idle />
       </section>
     </main>
   </body>

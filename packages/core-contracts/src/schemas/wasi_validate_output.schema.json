@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/wasi_validate_output.schema.json",
+  "title": "WasiValidateOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["violations"],
+  "properties": {
+    "violations": {
+      "type": "array",
+      "items": { "$ref": "planforge://schemas/violation.schema.json" }
+    }
+  }
+}

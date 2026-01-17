@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/quote.schema.json",
+  "title": "Quote",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ruleset_version", "currency", "total", "items"],
+  "properties": {
+    "ruleset_version": { "type": "string", "minLength": 1 },
+    "currency": { "type": "string", "minLength": 1 },
+    "total": { "$ref": "planforge://schemas/money.schema.json" },
+    "items": {
+      "type": "array",
+      "items": { "$ref": "planforge://schemas/quote_item.schema.json" }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

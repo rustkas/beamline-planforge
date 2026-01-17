@@ -1,6 +1,14 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { validate_kitchen_state } from "./validation/schemas";
+import {
+  validate_kitchen_state,
+  validate_wasi_export_input,
+  validate_wasi_export_output,
+  validate_wasi_pricing_input,
+  validate_wasi_pricing_output,
+  validate_wasi_validate_input,
+  validate_wasi_validate_output
+} from "./validation/schemas";
 import { create_store, type Store } from "./store/store";
 import { apply_patch, derive_render_model, validate_layout } from "./wasm/core_wasm";
 import type { proposed_patch, violation } from "@planforge/plugin-sdk";
@@ -8,10 +16,14 @@ import { list_catalog_items, CATALOG_VERSION, MODULES_CATALOG_VERSION } from "./
 import { apply_pricing_hooks } from "./pricing/pipeline";
 import { compute_quote, PRICING_RULESET_VERSION } from "./pricing/ruleset";
 import { list_rulesets } from "./pricing/ruleset_store";
-import { resolve_wasi_plugin_path } from "./wasi/registry";
-import { run_wasi_validate, type WasiError } from "./wasi/runner";
+import { get_wasi_plugin_info, load_wasi_manifest, resolve_wasi_plugin_path } from "./wasi/registry";
+import { run_wasi_export, run_wasi_validate, type WasiError } from "./wasi/runner";
+import { create_license_manager } from "./license/manager";
+import { generate_exports } from "./exports/generate";
+import { read_asset } from "./assets/handler";
 
 let store: Store;
+let license_manager: Awaited<ReturnType<typeof create_license_manager>>;
 
 type ErrorResponse = { error: { code: string; message: string; details?: Record<string, unknown> } };
 
@@ -31,9 +43,18 @@ function extract_violations(payload: unknown): violation[] {
   return [];
 }
 
+function extract_token(authorization: string | undefined, fallback: string | null): string | null {
+  if (authorization && authorization.startsWith("Bearer ")) {
+    const token = authorization.slice("Bearer ".length).trim();
+    return token.length > 0 ? token : fallback;
+  }
+  return fallback;
+}
+
 export async function create_app(): Promise<Hono> {
   const app = new Hono();
   store = await create_store();
+  license_manager = await create_license_manager();
 
   app.use("*", cors({ origin: "*" }));
   app.use("*", async (c, next) => {
@@ -44,6 +65,50 @@ export async function create_app(): Promise<Hono> {
   });
 
   app.get("/health", (c) => c.json({ ok: true, version: "0.1.0" }));
+
+  app.get("/assets/*", async (c) => {
+    const rel = c.req.path.replace(/^\/assets\//, "");
+    const result = await read_asset(rel);
+    if (!result.ok || !result.body || !result.headers) {
+      return c.json(error_response("asset.not_found", "Asset not found"), result.status);
+    }
+    return new Response(result.body, {
+      status: 200,
+      headers: result.headers
+    });
+  });
+
+  app.get("/license/status", async (c) => {
+    const token = extract_token(c.req.header("authorization"), c.req.query("token"));
+    const status = await license_manager.get_status(token);
+    return c.json(status);
+  });
+
+  app.post("/license/refresh", async (c) => {
+    let body: { token?: string } = {};
+    try {
+      body = (await c.req.json()) as { token?: string };
+    } catch {
+      body = {};
+    }
+    const token = body.token ?? extract_token(c.req.header("authorization"), null);
+    const result = await license_manager.refresh(token ?? null);
+    if (!result.ok) {
+      return c.json(
+        { ok: false, error: { code: result.error?.code ?? "license.refresh_failed", message: result.error?.message ?? "Refresh failed" } },
+        502
+      );
+    }
+    return c.json(result);
+  });
+
+  app.get("/license/trust-store", async (c) => {
+    const store = await license_manager.get_trust_store();
+    if (!store) {
+      return c.json(error_response("license.trust_store_missing", "Trust store not available"), 404);
+    }
+    return c.json(store);
+  });
 
   app.post("/projects", async (c) => {
     let body: unknown;
@@ -205,12 +270,45 @@ export async function create_app(): Promise<Hono> {
       return c.json(error_response(quote_res.error.code, quote_res.error.message, quote_res.error.details), 422);
     }
 
+    const pricing_plugin_id = process.env.WASI_PRICING_PLUGIN_ID ?? "";
+    let wasi_pricing: { plugin_id: string; wasm_path: string; timeout_ms?: number } | undefined;
+    if (pricing_plugin_id.length > 0) {
+      const info = await get_wasi_plugin_info(pricing_plugin_id);
+      if (!info || !info.allowed_hooks.includes("pricing")) {
+        return c.json(error_response("wasi.plugin_not_found", "Pricing WASI plugin not available"), 404);
+      }
+      const wasm_path = await resolve_wasi_plugin_path(pricing_plugin_id);
+      if (!wasm_path) {
+        return c.json(error_response("wasi.plugin_not_found", "Pricing WASI plugin not found"), 404);
+      }
+      if (info.manifest.integrity.channel === "paid") {
+        const token = extract_token(c.req.header("authorization"), null);
+        const status = await license_manager.get_status(token);
+        if (!status.allowed) {
+          return c.json(
+            error_response("license.denied", "License denied", {
+              revoked: status.revoked,
+              exp: status.exp,
+              last_good_refresh_at: status.last_good_refresh_at
+            }),
+            403
+          );
+        }
+      }
+      wasi_pricing = {
+        plugin_id: pricing_plugin_id,
+        wasm_path,
+        timeout_ms: Number(process.env.WASI_TIMEOUT_MS ?? 2000)
+      };
+    }
+
     const merged = await apply_pricing_hooks({
       project_id,
       revision_id,
       kitchen_state: revision.kitchen_state,
       base_quote: quote_res.quote,
-      pricing_context: body.pricing_context
+      pricing_context: body.pricing_context,
+      wasi_pricing
     });
 
     const stored = await store.create_quote(project_id, revision_id, {
@@ -279,9 +377,31 @@ export async function create_app(): Promise<Hono> {
       return c.json(error_response("wasi.invalid_request", "plugin_id and kitchen_state required"), 400);
     }
 
-    const schema = validate_kitchen_state(body.kitchen_state);
-    if (!schema.ok) {
-      return c.json(error_response("schema.invalid", "KitchenState schema invalid", { errors: schema.errors }), 400);
+    const manifest = await load_wasi_manifest(body.plugin_id);
+    if (!manifest) {
+      return c.json(error_response("wasi.plugin_not_found", "WASI plugin manifest not found"), 404);
+    }
+    if (manifest.integrity.channel === "paid") {
+      const token = extract_token(c.req.header("authorization"), c.req.query("token"));
+      const status = await license_manager.get_status(token);
+      if (!status.allowed) {
+        return c.json(
+          error_response("license.denied", "License denied", {
+            revoked: status.revoked,
+            exp: status.exp,
+            last_good_refresh_at: status.last_good_refresh_at
+          }),
+          403
+        );
+      }
+    }
+
+    const input_validation = validate_wasi_validate_input({
+      kitchen_state: body.kitchen_state,
+      mode: body.mode ?? "full"
+    });
+    if (!input_validation.ok) {
+      return c.json(error_response("schema.invalid", "WASI validate input invalid", { errors: input_validation.errors }), 400);
     }
 
     const wasm_path = await resolve_wasi_plugin_path(body.plugin_id);
@@ -295,11 +415,100 @@ export async function create_app(): Promise<Hono> {
         input: { kitchen_state: body.kitchen_state, mode: body.mode ?? "full" },
         timeout_ms: Number(process.env.WASI_TIMEOUT_MS ?? 2000)
       });
+      const output_validation = validate_wasi_validate_output(output);
+      if (!output_validation.ok) {
+        return c.json(
+          error_response("schema.invalid", "WASI validate output invalid", { errors: output_validation.errors }),
+          502
+        );
+      }
       return c.json(output);
     } catch (error) {
       const err = error as WasiError;
       return c.json(error_response(err.code ?? "wasi.error", err.message ?? "WASI error", err.details), 502);
     }
+  });
+
+  app.post("/exports", async (c) => {
+    let body: { project_id?: string; revision_id?: string; format?: "json" | "pdf" };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+
+    if (!body?.project_id || !body?.revision_id) {
+      return c.json(error_response("export.invalid_request", "project_id and revision_id are required"), 400);
+    }
+
+    const revision = await store.get_revision(body.project_id, body.revision_id);
+    if (!revision) {
+      return c.json(error_response("revision.not_found", "Revision not found"), 404);
+    }
+
+    const artifacts = generate_exports({ kitchen_state: revision.kitchen_state });
+
+    const export_plugin_id = process.env.WASI_EXPORT_PLUGIN_ID ?? "";
+    if (export_plugin_id.length > 0) {
+      const info = await get_wasi_plugin_info(export_plugin_id);
+      if (!info || !info.allowed_hooks.includes("export")) {
+        return c.json(error_response("wasi.plugin_not_found", "Export WASI plugin not available"), 404);
+      }
+      const wasm_path = await resolve_wasi_plugin_path(export_plugin_id);
+      if (!wasm_path) {
+        return c.json(error_response("wasi.plugin_not_found", "Export WASI plugin not found"), 404);
+      }
+      if (info.manifest.integrity.channel === "paid") {
+        const token = extract_token(c.req.header("authorization"), null);
+        const status = await license_manager.get_status(token);
+        if (!status.allowed) {
+          return c.json(
+            error_response("license.denied", "License denied", {
+              revoked: status.revoked,
+              exp: status.exp,
+              last_good_refresh_at: status.last_good_refresh_at
+            }),
+            403
+          );
+        }
+      }
+
+      try {
+        const input_validation = validate_wasi_export_input({
+          kitchen_state: revision.kitchen_state,
+          format: body.format ?? "json"
+        });
+        if (!input_validation.ok) {
+          return c.json(
+            error_response("schema.invalid", "WASI export input invalid", { errors: input_validation.errors }),
+            400
+          );
+        }
+        const output = await run_wasi_export({
+          wasm_path,
+          input: {
+            kitchen_state: revision.kitchen_state,
+            format: body.format ?? "json"
+          },
+          timeout_ms: Number(process.env.WASI_TIMEOUT_MS ?? 2000)
+        });
+        const output_validation = validate_wasi_export_output(output);
+        if (!output_validation.ok) {
+          return c.json(
+            error_response("schema.invalid", "WASI export output invalid", { errors: output_validation.errors }),
+            502
+          );
+        }
+        if (Array.isArray(output.artifacts)) {
+          artifacts.push(...(output.artifacts as any[]));
+        }
+      } catch (error) {
+        const err = error as WasiError;
+        return c.json(error_response(err.code ?? "wasi.error", err.message ?? "WASI error", err.details), 502);
+      }
+    }
+
+    return c.json({ artifacts });
   });
 
   app.post("/projects/:project_id/revisions/:revision_id/orders", async (c) => {

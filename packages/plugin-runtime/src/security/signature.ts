@@ -50,12 +50,6 @@ async function verify_eddsa_subtle(spki_der: Uint8Array, signing_input: Uint8Arr
   );
 }
 
-async function verify_eddsa_node(spki_der: Uint8Array, signing_input: Uint8Array, signature: Uint8Array): Promise<boolean> {
-  const { createPublicKey, verify } = await import("node:crypto");
-  const key = createPublicKey({ key: Buffer.from(spki_der), format: "der", type: "spki" });
-  return verify(null, Buffer.from(signing_input), key, Buffer.from(signature));
-}
-
 export function canonicalize_manifest_for_signature(manifest: Record<string, unknown>): string {
   const clone = structuredClone(manifest) as Record<string, unknown>;
   const integrity = clone.integrity as Record<string, unknown> | undefined;
@@ -80,5 +74,5 @@ export async function verify_manifest_signature(args: {
   if (globalThis.crypto?.subtle) {
     return verify_eddsa_subtle(spki_der, signing_input, signature);
   }
-  return verify_eddsa_node(spki_der, signing_input, signature);
+  throw new Error("WebCrypto subtle is not available for signature verification");
 }

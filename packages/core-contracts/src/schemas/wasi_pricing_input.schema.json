@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/wasi_pricing_input.schema.json",
+  "title": "WasiPricingInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kitchen_state", "quote"],
+  "properties": {
+    "kitchen_state": { "$ref": "planforge://schemas/kitchen_state.schema.json" },
+    "quote": { "$ref": "planforge://schemas/quote.schema.json" }
+  }
+}

@@ -34,7 +34,13 @@ export type {
   render_post_render_params,
   render_post_render_result
 } from "./hooks";
-export type { license_capabilities, license_decision, license_diagnostic, license_error_code } from "./licensing";
+export type {
+  license_capabilities,
+  license_context,
+  license_decision,
+  license_diagnostic,
+  license_error_code
+} from "./licensing";
 export type {
   any_method as rpc_any_method,
   apply_patch_result as rpc_apply_patch_result,

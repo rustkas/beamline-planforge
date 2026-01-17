@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/wasi_validate_input.schema.json",
+  "title": "WasiValidateInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kitchen_state", "mode"],
+  "properties": {
+    "kitchen_state": { "$ref": "planforge://schemas/kitchen_state.schema.json" },
+    "mode": { "enum": ["drag", "full"] }
+  }
+}

@@ -3,6 +3,7 @@ import { create_api_core_client } from "./api_core_client";
 import { create_ai_orchestrator_client, type TurnResult } from "./ai_orchestrator_client";
 import { create_core_client } from "./core_adapter";
 import { load_kitchen_state_fixture } from "./fixtures";
+import { validate_render_model } from "./render_model_validation";
 import type { host_context, quote, render_instruction } from "@planforge/plugin-sdk";
 import {
   merge_quote,
@@ -27,6 +28,7 @@ export type AppState = {
   kitchen_state: unknown | null;
   render_model: unknown | null;
   render_instructions: render_instruction[];
+  render_quality: "draft" | "quality";
   base_violations: Violation[];
   violations: Violation[];
   base_quote: quote | null;
@@ -47,6 +49,7 @@ const initial_state: AppState = {
   kitchen_state: null,
   render_model: null,
   render_instructions: [],
+  render_quality: "draft",
   base_violations: [],
   violations: [],
   base_quote: null,
@@ -151,11 +154,19 @@ export async function recompute(): Promise<void> {
   try {
     const validation = (await core.validate_layout(snapshot.kitchen_state)) as { violations?: Violation[] };
     const base_violations = validation?.violations ?? [];
-    const render_model = await core.derive_render_model(snapshot.kitchen_state, "draft");
+    const render_model = await core.derive_render_model(
+      snapshot.kitchen_state,
+      snapshot.render_quality
+    );
+    const render_validation = validate_render_model(render_model);
+    if (!render_validation.ok) {
+      set_state({ error: `RenderModel invalid: ${render_validation.errors[0] ?? "unknown"}` });
+    }
     const plugin_result = await apply_plugin_hooks({
       kitchen_state: snapshot.kitchen_state,
       base_violations,
-      render_model
+      render_model,
+      quality: snapshot.render_quality
     });
     const quote_result = await recompute_quote({
       mode: "local",
@@ -188,15 +199,24 @@ async function recompute_server(): Promise<void> {
   set_state({ busy: true, error: null });
   try {
     const api = create_api_core_client(snapshot.api_base_url);
-    const render = await api.render(snapshot.project_id, snapshot.revision_id, "draft");
+    const render = await api.render(
+      snapshot.project_id,
+      snapshot.revision_id,
+      snapshot.render_quality
+    );
     if (!render.ok) {
       set_state({ error: render.error.message });
       return;
     }
+    const render_validation = validate_render_model(render.data);
+    if (!render_validation.ok) {
+      set_state({ error: `RenderModel invalid: ${render_validation.errors[0] ?? "unknown"}` });
+    }
     const plugin_result = await apply_plugin_hooks({
       kitchen_state: snapshot.kitchen_state,
       base_violations: snapshot.base_violations,
-      render_model: render.data
+      render_model: render.data,
+      quality: snapshot.render_quality
     });
     const quote_result = await recompute_quote({
       mode: "server",
@@ -233,6 +253,7 @@ async function apply_plugin_hooks(args: {
   kitchen_state: unknown;
   base_violations: Violation[];
   render_model: unknown;
+  quality: "draft" | "quality";
 }): Promise<{ violations: Violation[]; instructions: render_instruction[] }> {
   const snapshot = get_snapshot();
   const plugins = get_loaded_plugins();
@@ -260,7 +281,7 @@ async function apply_plugin_hooks(args: {
     revision_id: snapshot.revision_id ?? undefined,
     kitchen_state: args.kitchen_state,
     render_model: args.render_model,
-    quality: "draft"
+    quality: args.quality
   });
 
   return { violations: constraints.violations, instructions: render.instructions };
@@ -320,6 +341,11 @@ async function recompute_quote(args: {
 export async function set_pricing_channel(channel: string | undefined): Promise<void> {
   const snapshot = get_snapshot();
   set_state({ pricing_context: { ...snapshot.pricing_context, channel } });
+  await recompute();
+}
+
+export async function set_render_quality(quality: "draft" | "quality"): Promise<void> {
+  set_state({ render_quality: quality });
   await recompute();
 }
 

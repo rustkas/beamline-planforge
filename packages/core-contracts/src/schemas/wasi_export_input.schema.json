@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/wasi_export_input.schema.json",
+  "title": "WasiExportInput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["kitchen_state", "format"],
+  "properties": {
+    "kitchen_state": { "$ref": "planforge://schemas/kitchen_state.schema.json" },
+    "render_model": { "$ref": "planforge://schemas/render_model.schema.json" },
+    "quote": { "$ref": "planforge://schemas/quote.schema.json" },
+    "format": { "type": "string", "minLength": 1 },
+    "options": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

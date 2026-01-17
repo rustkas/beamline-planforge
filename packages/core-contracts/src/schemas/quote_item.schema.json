@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/quote_item.schema.json",
+  "title": "QuoteItem",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["code", "title", "qty", "unit_price", "amount"],
+  "properties": {
+    "code": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "qty": { "type": "number" },
+    "unit_price": { "$ref": "planforge://schemas/money.schema.json" },
+    "amount": { "$ref": "planforge://schemas/money.schema.json" },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

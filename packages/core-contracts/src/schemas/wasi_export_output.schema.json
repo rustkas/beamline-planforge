@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/wasi_export_output.schema.json",
+  "title": "WasiExportOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["artifacts"],
+  "properties": {
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "name", "mime"],
+        "properties": {
+          "kind": { "enum": ["file", "link", "inline"] },
+          "name": { "type": "string", "minLength": 1 },
+          "mime": { "type": "string", "minLength": 1 },
+          "bytes_base64": { "type": "string" },
+          "url": { "type": "string" },
+          "meta": { "type": "object", "additionalProperties": true }
+        }
+      }
+    }
+  }
+}
