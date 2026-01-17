@@ -246,15 +246,37 @@ export function create_app(): Hono {
 
   app.post("/projects/:project_id/revisions/:revision_id/orders", async (c) => {
     const { project_id, revision_id } = c.req.param();
-    const revision = store.get_revision(project_id, revision_id);
-    if (!revision) {
-      return c.json(error_response("revision.not_found", "Revision not found"), 404);
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
     }
+    return app.fetch(
+      new Request(new URL("/orders", c.req.url), {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": c.req.header("idempotency-key") ?? "" },
+        body: JSON.stringify({ ...(body as Record<string, unknown>), project_id, revision_id })
+      })
+    );
+  });
 
+  app.get("/projects/:project_id/orders/:order_id", (c) => {
+    const { project_id, order_id } = c.req.param();
+    const order = store.get_order(project_id, order_id);
+    if (!order) {
+      return c.json(error_response("order.not_found", "Order not found"), 404);
+    }
+    return c.json(order);
+  });
+
+  app.post("/orders", async (c) => {
     let body: {
+      project_id?: string;
+      revision_id?: string;
       quote_id?: string;
-      contact?: { name?: string; email?: string; phone?: string };
-      address?: { line1?: string; city?: string; country?: string };
+      customer?: { name?: string; email?: string; phone?: string };
+      delivery?: { line1?: string; city?: string; country?: string };
     };
     try {
       body = (await c.req.json()) as typeof body;
@@ -262,27 +284,48 @@ export function create_app(): Hono {
       return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
     }
 
-    if (!body?.quote_id) {
-      return c.json(error_response("order.missing_quote", "quote_id is required"), 400);
+    if (!body?.project_id || !body?.revision_id || !body?.quote_id) {
+      return c.json(error_response("order.invalid_request", "project_id, revision_id, quote_id are required"), 400);
     }
 
-    const quote = store.get_quote(project_id, body.quote_id);
-    if (!quote || quote.revision_id !== revision_id) {
-      return c.json(error_response("quote.not_found", "Quote not found for revision"), 404);
+    const project_id = body.project_id;
+    const revision_id = body.revision_id;
+
+    const revision = store.get_revision(project_id, revision_id);
+    if (!revision) {
+      return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
 
-    const contact = body.contact;
-    const address = body.address;
-    if (!contact?.name || !contact?.email || !address?.line1 || !address?.city || !address?.country) {
-      return c.json(error_response("order.invalid", "Missing contact or address fields"), 400);
+    const quote = store.get_quote(project_id, body.quote_id) ?? store.find_quote(body.quote_id);
+    if (!quote) {
+      return c.json(error_response("quote.not_found", "Quote not found"), 404);
+    }
+    if (quote.revision_id !== revision_id) {
+      return c.json(
+        error_response("quote.revision_mismatch", "Quote does not match revision", {
+          quote_revision_id: quote.revision_id
+        }),
+        400
+      );
+    }
+    if (!quote.ruleset_version) {
+      return c.json(error_response("quote.invalid", "Quote missing ruleset_version"), 400);
     }
 
+    const customer = body.customer;
+    const delivery = body.delivery;
+    if (!customer?.name || !customer?.email || !delivery?.line1 || !delivery?.city || !delivery?.country) {
+      return c.json(error_response("order.invalid", "Missing customer or delivery fields"), 400);
+    }
+
+    const idempotency_key = c.req.header("idempotency-key") ?? undefined;
     const order = store.create_order({
       project_id,
       revision_id,
       quote,
-      contact: { name: contact.name, email: contact.email, phone: contact.phone },
-      address: { line1: address.line1, city: address.city, country: address.country }
+      customer: { name: customer.name, email: customer.email, phone: customer.phone },
+      delivery: { line1: delivery.line1, city: delivery.city, country: delivery.country },
+      idempotency_key: idempotency_key && idempotency_key.length > 0 ? idempotency_key : undefined
     });
 
     if (!order) {
@@ -292,9 +335,8 @@ export function create_app(): Hono {
     return c.json({ order_id: order.order_id, status: order.status });
   });
 
-  app.get("/projects/:project_id/orders/:order_id", (c) => {
-    const { project_id, order_id } = c.req.param();
-    const order = store.get_order(project_id, order_id);
+  app.get("/orders/:order_id", (c) => {
+    const order = store.find_order(c.req.param("order_id"));
     if (!order) {
       return c.json(error_response("order.not_found", "Order not found"), 404);
     }

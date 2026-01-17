@@ -76,12 +76,13 @@ export type Order = {
   created_at: string;
   status: OrderStatus;
   quote: Quote;
-  contact: {
+  idempotency_key?: string;
+  customer: {
     name: string;
     email: string;
     phone?: string;
   };
-  address: {
+  delivery: {
     line1: string;
     city: string;
     country: string;
@@ -93,6 +94,7 @@ export class InMemoryStore {
   private revisions = new Map<string, Revision[]>();
   private quotes = new Map<string, Quote[]>();
   private orders = new Map<string, Order[]>();
+  private order_idempotency = new Map<string, Order>();
   private persist_path: string | null;
 
   constructor(persist_path: string | null) {
@@ -219,13 +221,19 @@ export class InMemoryStore {
     project_id: string;
     revision_id: string;
     quote: Quote;
-    contact: Order["contact"];
-    address: Order["address"];
+    customer: Order["customer"];
+    delivery: Order["delivery"];
+    idempotency_key?: string;
   }): Order | null {
     const project = this.projects.get(args.project_id);
     if (!project) return null;
     const revision = this.get_revision(args.project_id, args.revision_id);
     if (!revision) return null;
+
+    if (args.idempotency_key) {
+      const existing = this.order_idempotency.get(args.idempotency_key);
+      if (existing) return existing;
+    }
 
     const order_id = `order_${crypto.randomUUID().replace(/-/g, "")}`;
     const created_at = new Date().toISOString();
@@ -237,13 +245,17 @@ export class InMemoryStore {
       created_at,
       status: "confirmed",
       quote: args.quote,
-      contact: args.contact,
-      address: args.address
+      idempotency_key: args.idempotency_key,
+      customer: args.customer,
+      delivery: args.delivery
     };
 
     const list = this.orders.get(args.project_id) ?? [];
     list.push(order);
     this.orders.set(args.project_id, list);
+    if (args.idempotency_key) {
+      this.order_idempotency.set(args.idempotency_key, order);
+    }
     void this.persist(args.project_id);
 
     return order;
@@ -252,6 +264,14 @@ export class InMemoryStore {
   get_order(project_id: string, order_id: string): Order | null {
     const list = this.orders.get(project_id) ?? [];
     return list.find((o) => o.order_id === order_id) ?? null;
+  }
+
+  find_order(order_id: string): Order | null {
+    for (const list of this.orders.values()) {
+      const found = list.find((o) => o.order_id === order_id);
+      if (found) return found;
+    }
+    return null;
   }
 
   private async persist(project_id: string): Promise<void> {
