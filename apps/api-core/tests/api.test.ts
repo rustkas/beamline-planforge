@@ -122,9 +122,10 @@ describe("api-core", () => {
     });
 
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { quote_id: string; items: unknown[]; total: { amount: number } };
+    const json = (await res.json()) as { quote_id: string; items: Array<{ code: string }>; total: { amount: number } };
     expect(json.quote_id).toContain("quote_");
     expect(Array.isArray(json.items)).toBe(true);
+    expect(json.items.map((item) => item.code)).toContain("pricing.adjustment.delivery");
     expect(json.total.amount).toBeGreaterThan(0);
   });
 

@@ -43,7 +43,10 @@ describe("pricing", () => {
     const res = compute_quote(fixture(), "pricing_ruleset_0.1.0");
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.quote.items.length).toBe(1);
+      expect(res.quote.items.length).toBeGreaterThan(1);
+      const codes = res.quote.items.map((item) => item.code);
+      expect(codes).toContain("pricing.adjustment.delivery");
+      expect(codes).toContain("pricing.adjustment.installation");
       expect(res.quote.total.amount).toBeGreaterThan(0);
     }
   });
