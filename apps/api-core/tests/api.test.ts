@@ -144,13 +144,15 @@ describe("api-core", () => {
     });
     const quote_json = (await quote.json()) as { quote_id: string };
 
-    const order = await app.request(`/projects/${created.project_id}/revisions/${created.revision_id}/orders`, {
+    const order = await app.request("/orders", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
+        project_id: created.project_id,
+        revision_id: created.revision_id,
         quote_id: quote_json.quote_id,
-        contact: { name: "Test User", email: "test@example.com" },
-        address: { line1: "Main Street 1", city: "Test City", country: "US" }
+        customer: { name: "Test User", email: "test@example.com" },
+        delivery: { line1: "Main Street 1", city: "Test City", country: "US" }
       })
     });
 
@@ -158,6 +160,88 @@ describe("api-core", () => {
     const order_json = (await order.json()) as { order_id: string; status: string };
     expect(order_json.order_id).toContain("order_");
     expect(order_json.status).toBe("confirmed");
+  });
+
+  test("Order rejects quote from another revision", async () => {
+    const app = create_app();
+    const create = await app.request("/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(fixture())
+    });
+    const created = (await create.json()) as { project_id: string; revision_id: string };
+
+    const quote = await app.request("/quotes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project_id: created.project_id, revision_id: created.revision_id })
+    });
+    const quote_json = (await quote.json()) as { quote_id: string };
+
+    const patch = {
+      ops: [{ op: "replace", path: "/layout/objects/0/transform_mm/position_mm/x", value: 1200 }]
+    };
+    const patch_res = await app.request(`/projects/${created.project_id}/revisions/${created.revision_id}/patch`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(patch)
+    });
+    const patch_json = (await patch_res.json()) as { new_revision_id: string };
+
+    const order = await app.request("/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        project_id: created.project_id,
+        revision_id: patch_json.new_revision_id,
+        quote_id: quote_json.quote_id,
+        customer: { name: "Test User", email: "test@example.com" },
+        delivery: { line1: "Main Street 1", city: "Test City", country: "US" }
+      })
+    });
+
+    expect(order.status).toBe(400);
+  });
+
+  test("Order idempotency key returns same order", async () => {
+    const app = create_app();
+    const create = await app.request("/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(fixture())
+    });
+    const created = (await create.json()) as { project_id: string; revision_id: string };
+
+    const quote = await app.request("/quotes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project_id: created.project_id, revision_id: created.revision_id })
+    });
+    const quote_json = (await quote.json()) as { quote_id: string };
+
+    const payload = {
+      project_id: created.project_id,
+      revision_id: created.revision_id,
+      quote_id: quote_json.quote_id,
+      customer: { name: "Test User", email: "test@example.com" },
+      delivery: { line1: "Main Street 1", city: "Test City", country: "US" }
+    };
+
+    const first = await app.request("/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "abc-123" },
+      body: JSON.stringify(payload)
+    });
+    const first_json = (await first.json()) as { order_id: string };
+
+    const second = await app.request("/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", "idempotency-key": "abc-123" },
+      body: JSON.stringify(payload)
+    });
+    const second_json = (await second.json()) as { order_id: string };
+
+    expect(first_json.order_id).toBe(second_json.order_id);
   });
 
   test("GET /quotes/:id returns stored quote", async () => {
