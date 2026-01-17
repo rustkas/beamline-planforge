@@ -1,3 +1,4 @@
+use crate::constraints::validate_constraints;
 use crate::model::kitchen_state::KitchenState;
 use crate::model::violation::Violation;
 use serde_json::json;
@@ -77,6 +78,8 @@ pub fn validate_layout_json(kitchen_state_json: String) -> String {
             ));
         }
     }
+
+    violations.extend(validate_constraints(&kitchen_state));
 
     violations_response(violations)
 }

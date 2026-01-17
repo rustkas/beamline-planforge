@@ -1,7 +1,9 @@
 use wasm_bindgen::prelude::*;
 
 pub mod api;
+pub mod constraints;
 pub mod model;
+pub mod geometry;
 
 #[wasm_bindgen]
 pub fn validate_layout_json(kitchen_state_json: String) -> String {
@@ -21,4 +23,9 @@ pub fn apply_patch_json(kitchen_state_json: String, patch_json: String) -> Strin
 #[wasm_bindgen]
 pub fn normalize_state_json(kitchen_state_json: String) -> String {
     api::normalize_state::normalize_state_json(kitchen_state_json)
+}
+
+#[wasm_bindgen]
+pub fn compute_room_metrics_json(kitchen_state_json: String) -> String {
+    api::room_metrics::compute_room_metrics_json(kitchen_state_json)
 }

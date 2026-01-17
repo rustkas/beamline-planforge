@@ -25,7 +25,7 @@ pub struct Opening {
     pub sill_height_mm: Option<i32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum OpeningKind {
     Door,
