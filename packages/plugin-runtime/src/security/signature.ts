@@ -24,12 +24,16 @@ function utf8_to_bytes(text: string): Uint8Array {
   return new Uint8Array(Buffer.from(text, "utf8"));
 }
 
+function to_buffer_source(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
 async function import_ed25519_spki(spki_der: Uint8Array): Promise<CryptoKey> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) {
     throw new Error("WebCrypto subtle is not available");
   }
-  return subtle.importKey("spki", spki_der, { name: "Ed25519" }, false, ["verify"]);
+  return subtle.importKey("spki", to_buffer_source(spki_der), { name: "Ed25519" }, false, ["verify"]);
 }
 
 async function verify_eddsa_subtle(spki_der: Uint8Array, signing_input: Uint8Array, signature: Uint8Array): Promise<boolean> {
@@ -38,7 +42,12 @@ async function verify_eddsa_subtle(spki_der: Uint8Array, signing_input: Uint8Arr
   if (!subtle) {
     throw new Error("WebCrypto subtle is not available");
   }
-  return subtle.verify({ name: "Ed25519" }, key, signature, signing_input);
+  return subtle.verify(
+    { name: "Ed25519" },
+    key,
+    to_buffer_source(signature),
+    to_buffer_source(signing_input)
+  );
 }
 
 async function verify_eddsa_node(spki_der: Uint8Array, signing_input: Uint8Array, signature: Uint8Array): Promise<boolean> {

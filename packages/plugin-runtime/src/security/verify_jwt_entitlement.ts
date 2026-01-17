@@ -100,6 +100,10 @@ function utf8_to_bytes(s: string): Uint8Array {
   return new Uint8Array(Buffer.from(s, "utf8"));
 }
 
+function to_buffer_source(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
 function safe_json_parse(s: string): unknown {
   try {
     return JSON.parse(s);
@@ -138,13 +142,18 @@ function validate_claims_shape(x: unknown): x is jwt_claims {
 async function import_ed25519_spki(spki_der: Uint8Array): Promise<CryptoKey> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) throw new Error("WebCrypto subtle is not available");
-  return subtle.importKey("spki", spki_der, { name: "Ed25519" }, false, ["verify"]);
+  return subtle.importKey("spki", to_buffer_source(spki_der), { name: "Ed25519" }, false, ["verify"]);
 }
 
 async function verify_eddsa(public_key: CryptoKey, signing_input: Uint8Array, signature: Uint8Array): Promise<boolean> {
   const subtle = globalThis.crypto?.subtle;
   if (!subtle) throw new Error("WebCrypto subtle is not available");
-  return subtle.verify({ name: "Ed25519" }, public_key, signature, signing_input);
+  return subtle.verify(
+    { name: "Ed25519" },
+    public_key,
+    to_buffer_source(signature),
+    to_buffer_source(signing_input)
+  );
 }
 
 export async function verify_jwt_entitlement(args: {
