@@ -1,0 +1,7 @@
+{
+  "publisher_keys": [],
+  "issuer_keys": [],
+  "policy": {
+    "offline_grace_days_default": 14
+  }
+}

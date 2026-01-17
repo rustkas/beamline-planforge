@@ -1,10 +1,18 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { app_state } from "../lib/state";
-  import { create_host_api, validate_manifest, WorkerHost, type plugin_manifest } from "@planforge/plugin-runtime";
+  import {
+    create_host_api,
+    validate_manifest,
+    verify_plugin_license,
+    load_trust_store,
+    type plugin_manifest,
+    type trust_store
+  } from "@planforge/plugin-runtime";
   import { create_api_core_client } from "../lib/api_core_client";
   import { create_core_client } from "../lib/core_adapter";
   import { remove_loaded_plugin, set_loaded_plugin } from "../lib/plugins/registry";
+  import type { license_decision } from "@planforge/plugin-sdk";
 
   type PluginEntry = {
     id: string;
@@ -15,6 +23,7 @@
     error?: string;
     host?: WorkerHost;
     last_result?: unknown;
+    license?: license_decision;
   };
 
   const plugins: PluginEntry[] = [
@@ -26,8 +35,78 @@
     }
   ];
 
+  let trustStore: trust_store | null = null;
+  let entitlementToken = "";
+
+  function entitlement_key(): string {
+    return "planforge.entitlement_token";
+  }
+
+  function license_ok_key(): string {
+    return "planforge.license_last_online_ok";
+  }
+
+  async function load_trust(): Promise<void> {
+    if (trustStore) return;
+    try {
+      trustStore = await load_trust_store("/trust/trust_store.json");
+    } catch {
+      trustStore = null;
+    }
+  }
+
+  function read_entitlement(): string {
+    try {
+      return localStorage.getItem(entitlement_key()) ?? "";
+    } catch {
+      return "";
+    }
+  }
+
+  function write_entitlement(value: string): void {
+    try {
+      localStorage.setItem(entitlement_key(), value);
+    } catch {
+      return;
+    }
+  }
+
+  function read_last_ok(): number | null {
+    try {
+      const raw = localStorage.getItem(license_ok_key());
+      if (!raw) return null;
+      const num = Number(raw);
+      return Number.isFinite(num) ? num : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function write_last_ok(value: number): void {
+    try {
+      localStorage.setItem(license_ok_key(), String(value));
+    } catch {
+      return;
+    }
+  }
+
+  async function fetch_artifacts(manifest: plugin_manifest, manifest_url: string): Promise<Record<string, Uint8Array>> {
+    const hashes = manifest.integrity?.hashes ?? {};
+    const base = new URL(manifest_url, window.location.origin);
+    const artifacts: Record<string, Uint8Array> = {};
+    for (const path of Object.keys(hashes)) {
+      const url = new URL(path, base);
+      const res = await fetch(url.toString());
+      if (!res.ok) continue;
+      const buf = await res.arrayBuffer();
+      artifacts[path] = new Uint8Array(buf);
+    }
+    return artifacts;
+  }
+
   async function load_plugin(entry: PluginEntry): Promise<void> {
     try {
+      await load_trust();
       const res = await fetch(entry.manifest_url);
       const manifest = (await res.json()) as plugin_manifest;
       const validation = validate_manifest(manifest);
@@ -35,6 +114,26 @@
         entry.status = "error";
         entry.error = validation.errors.join("; ");
         return;
+      }
+
+      const artifacts = await fetch_artifacts(manifest, entry.manifest_url);
+      const now = Math.floor(Date.now() / 1000);
+      const decision = await verify_plugin_license({
+        manifest,
+        artifacts,
+        trust_store: trustStore,
+        entitlement_token: entitlementToken.length > 0 ? entitlementToken : null,
+        now_epoch_seconds: now,
+        last_online_ok_epoch: read_last_ok() ?? undefined
+      });
+      entry.license = decision;
+      if (!decision.allow_load) {
+        entry.status = "error";
+        entry.error = decision.diagnostics.map((d) => d.message).join("; ");
+        return;
+      }
+      if (decision.ok) {
+        write_last_ok(now);
       }
 
       const worker = new Worker(entry.entry_url);
@@ -89,6 +188,16 @@
       entry.manifest = manifest;
       entry.host = host;
       entry.status = "loaded";
+      if (entry.license?.allow_capabilities) {
+        manifest.capabilities = {
+          constraints: entry.license.allow_capabilities.constraints,
+          solver: entry.license.allow_capabilities.solver,
+          pricing: entry.license.allow_capabilities.pricing,
+          render: entry.license.allow_capabilities.render,
+          export: entry.license.allow_capabilities.export,
+          ui: { panels: [], wizard_steps: [], commands: [] }
+        };
+      }
       set_loaded_plugin({ manifest, host });
     } catch (error) {
       entry.status = "error";
@@ -147,10 +256,25 @@
   }
 
   onMount(() => {
+    entitlementToken = read_entitlement();
     for (const entry of plugins) {
       void load_plugin(entry);
     }
   });
+
+  async function apply_entitlement(): Promise<void> {
+    write_entitlement(entitlementToken);
+    for (const entry of plugins) {
+      entry.status = "idle";
+      entry.error = undefined;
+      entry.host = undefined;
+      entry.manifest = undefined;
+      entry.last_result = undefined;
+      entry.license = undefined;
+      remove_loaded_plugin(entry.id);
+      await load_plugin(entry);
+    }
+  }
 </script>
 
 <section class="plugins">
@@ -158,6 +282,14 @@
     <h3>Plugins</h3>
     <p class="meta">Runtime demo</p>
   </header>
+
+  <div class="entitlement">
+    <label>
+      Entitlement token
+      <textarea rows="3" bind:value={entitlementToken} placeholder="Paste JWT token"></textarea>
+    </label>
+    <button class="secondary" on:click={apply_entitlement}>Apply token</button>
+  </div>
 
   {#each plugins as plugin}
     <div class="plugin-card">
@@ -167,6 +299,11 @@
       </div>
       {#if plugin.manifest}
         <div class="meta">v{plugin.manifest.version} · {plugin.manifest.runtime.kind}</div>
+      {/if}
+      {#if plugin.license}
+        <div class="meta">
+          {plugin.license.ok ? "Licensed" : "Unlicensed"}
+        </div>
       {/if}
       {#if plugin.error}
         <div class="error">{plugin.error}</div>
@@ -229,6 +366,19 @@
     display: flex;
     gap: 0.5rem;
     margin-top: 0.5rem;
+  }
+  .entitlement {
+    display: grid;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+  textarea {
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.4rem;
+    font-size: 0.8rem;
+    resize: vertical;
   }
   pre {
     background: #f9fafb;
