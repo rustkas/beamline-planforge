@@ -10,7 +10,8 @@ import type {
   Revision,
   RevisionMeta
 } from "./store";
-import { list_modules, MODULES_CATALOG_VERSION } from "../catalog/catalog";
+import { list_catalog_items, CATALOG_VERSION } from "../catalog/catalog";
+import { list_rulesets } from "../pricing/ruleset_store";
 
 function hash_state(state: unknown): string {
   const json = canonical_json_stringify(state);
@@ -21,12 +22,37 @@ export class DbStore {
   constructor(private readonly db: DbClient) {}
 
   async seed_catalog(): Promise<void> {
-    const items = list_modules();
+    const items = list_catalog_items();
     for (const item of items) {
       await this.db`
-        INSERT INTO catalog_items (id, kind, title, price, catalog_version)
-        VALUES (${item.id}, ${"module"}, ${item.title}, ${item.price}, ${MODULES_CATALOG_VERSION})
-        ON CONFLICT (id) DO NOTHING
+        INSERT INTO catalog_items (id, sku, kind, title, price, attrs, catalog_version)
+        VALUES (
+          ${item.id},
+          ${item.sku},
+          ${item.kind},
+          ${item.title},
+          ${item.price},
+          ${item.attrs},
+          ${CATALOG_VERSION}
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          sku = EXCLUDED.sku,
+          kind = EXCLUDED.kind,
+          title = EXCLUDED.title,
+          price = EXCLUDED.price,
+          attrs = EXCLUDED.attrs,
+          catalog_version = EXCLUDED.catalog_version
+      `;
+    }
+
+    const rulesets = list_rulesets();
+    for (const ruleset of rulesets) {
+      await this.db`
+        INSERT INTO pricing_rulesets (version, currency, rules)
+        VALUES (${ruleset.version}, ${ruleset.currency}, ${ruleset})
+        ON CONFLICT (version) DO UPDATE SET
+          currency = EXCLUDED.currency,
+          rules = EXCLUDED.rules
       `;
     }
   }

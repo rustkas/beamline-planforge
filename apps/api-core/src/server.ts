@@ -4,9 +4,10 @@ import { validate_kitchen_state } from "./validation/schemas";
 import { create_store, type Store } from "./store/store";
 import { apply_patch, derive_render_model, validate_layout } from "./wasm/core_wasm";
 import type { proposed_patch, violation } from "@planforge/plugin-sdk";
-import { list_modules, MODULES_CATALOG_VERSION } from "./catalog/catalog";
+import { list_catalog_items, CATALOG_VERSION, MODULES_CATALOG_VERSION } from "./catalog/catalog";
 import { apply_pricing_hooks } from "./pricing/pipeline";
 import { compute_quote, PRICING_RULESET_VERSION } from "./pricing/ruleset";
+import { list_rulesets } from "./pricing/ruleset_store";
 import { resolve_wasi_plugin_path } from "./wasi/registry";
 import { run_wasi_validate, type WasiError } from "./wasi/runner";
 
@@ -244,8 +245,27 @@ export async function create_app(): Promise<Hono> {
   });
 
   app.get("/catalog/modules", (c) =>
-    c.json({ version: MODULES_CATALOG_VERSION, items: list_modules() })
+    c.json({ version: MODULES_CATALOG_VERSION, items: list_catalog_items("module") })
   );
+
+  app.get("/catalog/items", (c) => {
+    const kind = c.req.query("kind") as "module" | "material" | "appliance" | null;
+    const items = list_catalog_items(kind ?? undefined);
+    return c.json({ version: CATALOG_VERSION, items });
+  });
+
+  app.get("/catalog/versions", (c) =>
+    c.json({ catalog_version: CATALOG_VERSION, modules_version: MODULES_CATALOG_VERSION })
+  );
+
+  app.get("/pricing/rulesets/:version", (c) => {
+    const version = c.req.param("version");
+    const ruleset = list_rulesets().find((r) => r.version === version);
+    if (!ruleset) {
+      return c.json(error_response("pricing.ruleset_not_found", "Ruleset not found"), 404);
+    }
+    return c.json(ruleset);
+  });
 
   app.post("/wasi/validate", async (c) => {
     let body: { plugin_id?: string; kitchen_state?: unknown; mode?: "drag" | "full" };
