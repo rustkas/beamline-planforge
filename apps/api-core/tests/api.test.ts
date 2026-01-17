@@ -107,6 +107,60 @@ describe("api-core", () => {
     expect(json.nodes.length).toBe(1);
   });
 
+  test("Quote returns deterministic items", async () => {
+    const app = create_app();
+    const create = await app.request("/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(fixture())
+    });
+    const created = (await create.json()) as { project_id: string; revision_id: string };
+
+    const res = await app.request(`/projects/${created.project_id}/revisions/${created.revision_id}/quote`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({})
+    });
+
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { quote_id: string; items: unknown[]; total: { amount: number } };
+    expect(json.quote_id).toContain("quote_");
+    expect(Array.isArray(json.items)).toBe(true);
+    expect(json.total.amount).toBeGreaterThan(0);
+  });
+
+  test("Order freezes quote", async () => {
+    const app = create_app();
+    const create = await app.request("/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(fixture())
+    });
+    const created = (await create.json()) as { project_id: string; revision_id: string };
+
+    const quote = await app.request(`/projects/${created.project_id}/revisions/${created.revision_id}/quote`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({})
+    });
+    const quote_json = (await quote.json()) as { quote_id: string };
+
+    const order = await app.request(`/projects/${created.project_id}/revisions/${created.revision_id}/orders`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        quote_id: quote_json.quote_id,
+        contact: { name: "Test User", email: "test@example.com" },
+        address: { line1: "Main Street 1", city: "Test City", country: "US" }
+      })
+    });
+
+    expect(order.status).toBe(200);
+    const order_json = (await order.json()) as { order_id: string; status: string };
+    expect(order_json.order_id).toContain("order_");
+    expect(order_json.status).toBe("confirmed");
+  });
+
   test("Invalid schema returns 400", async () => {
     const app = create_app();
     const res = await app.request("/projects", {
