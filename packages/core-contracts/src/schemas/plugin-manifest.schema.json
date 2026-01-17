@@ -64,7 +64,7 @@
       "additionalProperties": false,
       "required": ["kind", "entry", "min_host_version", "compatibility"],
       "properties": {
-        "kind": { "enum": ["web", "wasm", "server"] },
+        "kind": { "enum": ["web", "wasm", "wasi", "server"] },
         "entry": { "$ref": "#/$defs/entry" },
         "min_host_version": {
           "type": "string",
@@ -95,6 +95,14 @@
           "then": {
             "properties": {
               "entry": { "$ref": "#/$defs/entry_web" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "kind": { "const": "wasi" } }, "required": ["kind"] },
+          "then": {
+            "properties": {
+              "entry": { "$ref": "#/$defs/entry_wasi" }
             }
           }
         },
@@ -136,6 +144,14 @@
       "required": ["module"],
       "properties": {
         "module": { "type": "string", "minLength": 1 }
+      }
+    },
+    "entry_wasi": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wasm"],
+      "properties": {
+        "wasm": { "type": "string", "minLength": 1 }
       }
     },
     "capabilities": {

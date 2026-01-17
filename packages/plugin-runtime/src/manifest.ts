@@ -17,7 +17,7 @@ export type plugin_manifest = {
   license: string;
   publisher: { name: string; url?: string };
   runtime: {
-    kind: "web" | "wasm" | "server";
+    kind: "web" | "wasm" | "wasi" | "server";
     entry: { js?: string; wasm?: string; module?: string; css?: string };
     min_host_version: string;
     compatibility: {

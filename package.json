@@ -11,6 +11,9 @@
     "dev": "bash scripts/dev.sh",
     "build": "bash scripts/build.sh",
     "test": "bash scripts/test.sh",
-    "wasm:build": "bash scripts/wasm_build.sh"
+    "wasm:build": "bun tools/wasm/cli.ts build",
+    "wasm:hash": "bun tools/wasm/cli.ts hash",
+    "wasm:verify": "bun tools/wasm/cli.ts verify",
+    "wasm:repro": "bun tools/wasm/cli.ts repro"
   }
 }
