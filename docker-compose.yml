@@ -1,8 +1,40 @@
 version: "3.9"
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: planforge
+      POSTGRES_USER: planforge
+      POSTGRES_PASSWORD: planforge
+    ports:
+      - "5432:5432"
+    volumes:
+      - planforge_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U planforge -d planforge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   web:
     image: planforge/web
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api-core:
     image: planforge/api-core
+    environment:
+      DATABASE_URL: postgres://planforge:planforge@postgres:5432/planforge
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   ai-orchestrator:
     image: planforge/ai-orchestrator
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  planforge_pg:

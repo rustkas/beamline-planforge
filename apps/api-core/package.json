@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "test:db": "DATABASE_URL=postgres://planforge:planforge@localhost:5432/planforge bun test"
   },
   "dependencies": {
     "@planforge/core-contracts": "workspace:*",
