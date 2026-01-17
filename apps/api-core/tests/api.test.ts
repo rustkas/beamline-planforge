@@ -115,11 +115,10 @@ describe("api-core", () => {
       body: JSON.stringify(fixture())
     });
     const created = (await create.json()) as { project_id: string; revision_id: string };
-
-    const res = await app.request(`/projects/${created.project_id}/revisions/${created.revision_id}/quote`, {
+    const res = await app.request("/quotes", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({})
+      body: JSON.stringify({ project_id: created.project_id, revision_id: created.revision_id })
     });
 
     expect(res.status).toBe(200);
@@ -138,10 +137,10 @@ describe("api-core", () => {
     });
     const created = (await create.json()) as { project_id: string; revision_id: string };
 
-    const quote = await app.request(`/projects/${created.project_id}/revisions/${created.revision_id}/quote`, {
+    const quote = await app.request("/quotes", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({})
+      body: JSON.stringify({ project_id: created.project_id, revision_id: created.revision_id })
     });
     const quote_json = (await quote.json()) as { quote_id: string };
 
@@ -159,6 +158,28 @@ describe("api-core", () => {
     const order_json = (await order.json()) as { order_id: string; status: string };
     expect(order_json.order_id).toContain("order_");
     expect(order_json.status).toBe("confirmed");
+  });
+
+  test("GET /quotes/:id returns stored quote", async () => {
+    const app = create_app();
+    const create = await app.request("/projects", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(fixture())
+    });
+    const created = (await create.json()) as { project_id: string; revision_id: string };
+
+    const quote = await app.request("/quotes", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ project_id: created.project_id, revision_id: created.revision_id })
+    });
+    const quote_json = (await quote.json()) as { quote_id: string };
+
+    const res = await app.request(`/quotes/${quote_json.quote_id}`);
+    expect(res.status).toBe(200);
+    const loaded = (await res.json()) as { quote_id: string };
+    expect(loaded.quote_id).toBe(quote_json.quote_id);
   });
 
   test("Invalid schema returns 400", async () => {

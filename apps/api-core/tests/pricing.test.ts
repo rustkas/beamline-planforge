@@ -40,7 +40,7 @@ function fixture(): Record<string, unknown> {
 
 describe("pricing", () => {
   test("computes quote deterministically", () => {
-    const res = compute_quote(fixture());
+    const res = compute_quote(fixture(), "pricing_ruleset_0.1.0");
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.quote.items.length).toBe(1);
