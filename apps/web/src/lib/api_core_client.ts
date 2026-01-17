@@ -35,6 +35,14 @@ type QuoteResponse = {
     amount: { currency: string; amount: number };
     meta?: Record<string, unknown>;
   }>;
+  diagnostics?: Array<{
+    plugin_id: string;
+    ok: boolean;
+    added_items: number;
+    added_adjustments: number;
+    errors: string[];
+    warnings: string[];
+  }>;
 };
 
 function make_error(status: number, message: string, body?: unknown): ApiError {
@@ -74,6 +82,13 @@ export function create_api_core_client(base_url: string) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(patch)
       }),
+    create_quote: (project_id: string, revision_id: string, ruleset_version?: string) =>
+      request<QuoteResponse>("/quotes", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project_id, revision_id, ruleset_version })
+      }),
+    get_quote: (quote_id: string) => request<QuoteResponse>(`/quotes/${quote_id}`),
     quote: (project_id: string, revision_id: string) =>
       request<QuoteResponse>(`/projects/${project_id}/revisions/${revision_id}/quote`, {
         method: "POST",
