@@ -4,6 +4,8 @@ import { validate_kitchen_state } from "./validation/schemas";
 import { create_store } from "./store/store";
 import { apply_patch, derive_render_model, validate_layout } from "./wasm/core_wasm";
 import type { proposed_patch, violation } from "@planforge/plugin-sdk";
+import { list_modules, MODULES_CATALOG_VERSION } from "./catalog/catalog";
+import { compute_quote, PRICING_RULESET_VERSION } from "./pricing/ruleset";
 
 const store = create_store();
 
@@ -81,7 +83,8 @@ export function create_app(): Hono {
     const revisions = store.list_revisions(project_id).map((rev) => ({
       revision_id: rev.revision_id,
       created_at: rev.created_at,
-      parent_revision_id: rev.parent_revision_id ?? null
+      parent_revision_id: rev.parent_revision_id ?? null,
+      content_hash: rev.content_hash
     }));
     return c.json(revisions);
   });
@@ -92,7 +95,12 @@ export function create_app(): Hono {
     if (!revision) {
       return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
-    return c.json({ project_id, revision_id, kitchen_state: revision.kitchen_state });
+    return c.json({
+      project_id,
+      revision_id,
+      content_hash: revision.content_hash,
+      kitchen_state: revision.kitchen_state
+    });
   });
 
   app.post("/projects/:project_id/revisions/:revision_id/patch", async (c) => {
@@ -165,25 +173,89 @@ export function create_app(): Hono {
     }
 
     const state = revision.kitchen_state as any;
-    const objects = state?.layout?.objects ?? [];
-    const unit_price = 100;
-    const qty = Array.isArray(objects) ? objects.length : 0;
-    const total = qty * unit_price;
-    const ruleset_version = state?.project?.ruleset_version ?? "pricing_ruleset_0.1.0";
+    const ruleset_version = state?.project?.ruleset_version ?? PRICING_RULESET_VERSION;
+    if (ruleset_version !== PRICING_RULESET_VERSION) {
+      return c.json(
+        error_response("pricing.ruleset_mismatch", "Unsupported pricing ruleset", {
+          ruleset_version,
+          expected: PRICING_RULESET_VERSION
+        }),
+        400
+      );
+    }
 
-    return c.json({
-      ruleset_version,
-      currency: "USD",
-      total,
-      items: [
-        {
-          code: "module.base",
-          qty,
-          unit_price,
-          amount: total
-        }
-      ]
+    const quote_res = compute_quote(revision.kitchen_state);
+    if (!quote_res.ok) {
+      return c.json(error_response(quote_res.error.code, quote_res.error.message, quote_res.error.details), 422);
+    }
+
+    const stored = store.create_quote(project_id, revision_id, quote_res.quote);
+    if (!stored) {
+      return c.json(error_response("project.not_found", "Project not found"), 404);
+    }
+
+    return c.json(stored);
+  });
+
+  app.get("/catalog/modules", (c) =>
+    c.json({ version: MODULES_CATALOG_VERSION, items: list_modules() })
+  );
+
+  app.post("/projects/:project_id/revisions/:revision_id/orders", async (c) => {
+    const { project_id, revision_id } = c.req.param();
+    const revision = store.get_revision(project_id, revision_id);
+    if (!revision) {
+      return c.json(error_response("revision.not_found", "Revision not found"), 404);
+    }
+
+    let body: {
+      quote_id?: string;
+      contact?: { name?: string; email?: string; phone?: string };
+      address?: { line1?: string; city?: string; country?: string };
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+
+    if (!body?.quote_id) {
+      return c.json(error_response("order.missing_quote", "quote_id is required"), 400);
+    }
+
+    const quote = store.get_quote(project_id, body.quote_id);
+    if (!quote || quote.revision_id !== revision_id) {
+      return c.json(error_response("quote.not_found", "Quote not found for revision"), 404);
+    }
+
+    const contact = body.contact;
+    const address = body.address;
+    if (!contact?.name || !contact?.email || !address?.line1 || !address?.city || !address?.country) {
+      return c.json(error_response("order.invalid", "Missing contact or address fields"), 400);
+    }
+
+    const order = store.create_order({
+      project_id,
+      revision_id,
+      quote,
+      contact: { name: contact.name, email: contact.email, phone: contact.phone },
+      address: { line1: address.line1, city: address.city, country: address.country }
     });
+
+    if (!order) {
+      return c.json(error_response("order.create_failed", "Order could not be created"), 500);
+    }
+
+    return c.json({ order_id: order.order_id, status: order.status });
+  });
+
+  app.get("/projects/:project_id/orders/:order_id", (c) => {
+    const { project_id, order_id } = c.req.param();
+    const order = store.get_order(project_id, order_id);
+    if (!order) {
+      return c.json(error_response("order.not_found", "Order not found"), 404);
+    }
+    return c.json(order);
   });
 
   return app;
