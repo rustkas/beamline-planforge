@@ -8,7 +8,7 @@ fn kitchen_state_fixture() -> String {
         "project_id": "proj_demo_001",
         "revision_id": "rev_0001",
         "units": "mm",
-        "ruleset_version": "pricing_ruleset_0.1.0"
+        "ruleset_version": "pricing_ruleset_v1"
       },
       "room": {
         "size_mm": { "width": 3200, "depth": 2600, "height": 2700 },

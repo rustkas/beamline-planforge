@@ -18,6 +18,23 @@ bun --filter @planforge/api-core run dev
 - `POST /projects/:project_id/revisions/:revision_id/patch`
 - `POST /projects/:project_id/revisions/:revision_id/render`
 - `POST /projects/:project_id/revisions/:revision_id/quote`
+- `POST /exports`
+- `GET /exports/:export_id`
+- `GET /exports/:export_id/artifacts/:artifact_id`
+
+## Exports (PDF)
+
+PDF generation defaults to Playwright. Install the browser binaries once:
+
+```bash
+bun --filter @planforge/api-core run setup:playwright
+```
+
+For tests/CI, set stub mode:
+
+```bash
+EXPORT_PDF_MODE=stub bun --filter @planforge/api-core test
+```
 
 ## WASM
 

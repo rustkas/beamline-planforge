@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { create_app } from "../src/server";
 
 function fixture(): Record<string, unknown> {
@@ -8,7 +11,7 @@ function fixture(): Record<string, unknown> {
       project_id: "proj_demo_001",
       revision_id: "rev_0001",
       units: "mm",
-      ruleset_version: "pricing_ruleset_0.1.0"
+      ruleset_version: "pricing_ruleset_v1"
     },
     room: {
       size_mm: { width: 3200, depth: 2600, height: 2700 },
@@ -102,9 +105,16 @@ describe("api-core", () => {
     });
 
     expect(res.status).toBe(200);
-    const json = (await res.json()) as { nodes: unknown[] };
+    const json = (await res.json()) as {
+      nodes: Array<{ material_overrides?: Record<string, string>; lod?: number; gltf_key?: string }>;
+      assets?: { gltf?: Record<string, { uri?: string }> };
+    };
     expect(Array.isArray(json.nodes)).toBe(true);
     expect(json.nodes.length).toBe(1);
+    expect(json.nodes[0]?.material_overrides?.front).toBe("mat_front_white");
+    const gltf_key = json.nodes[0]?.gltf_key ?? "base_sink_600";
+    const uri = json.assets?.gltf?.[gltf_key]?.uri ?? "";
+    expect(uri).toContain(`assets/models/${gltf_key}`);
   });
 
   test("Quote returns deterministic items", async () => {
@@ -125,7 +135,7 @@ describe("api-core", () => {
     const json = (await res.json()) as { quote_id: string; items: Array<{ code: string }>; total: { amount: number } };
     expect(json.quote_id).toContain("quote_");
     expect(Array.isArray(json.items)).toBe(true);
-    expect(json.items.map((item) => item.code)).toContain("pricing.adjustment.delivery");
+    expect(json.items.map((item) => item.code)).toContain("service.svc-delivery-std");
     expect(json.total.amount).toBeGreaterThan(0);
   });
 
@@ -276,5 +286,38 @@ describe("api-core", () => {
     });
 
     expect(res.status).toBe(400);
+  });
+
+  test("Assets endpoint serves files with cache headers", async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "planforge-assets-"));
+    const file_path = path.join(dir, "models", "demo", "lod0.glb");
+    await mkdir(path.dirname(file_path), { recursive: true });
+    await writeFile(file_path, new Uint8Array([0x67, 0x6c, 0x54, 0x46]));
+    process.env.ASSETS_DIR = dir;
+
+    const app = await create_app();
+    const res = await app.request("/assets/models/demo/lod0.glb");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("model/gltf-binary");
+    expect(res.headers.get("cache-control")).toContain("max-age=");
+    expect(res.headers.get("etag")).toBeTruthy();
+
+    const not_modified = await app.request("/assets/models/demo/lod0.glb", {
+      headers: { "if-none-match": res.headers.get("etag") ?? "" }
+    });
+    expect(not_modified.status).toBe(304);
+
+    await writeFile(`${file_path}.gz`, new Uint8Array([0x1f, 0x8b, 0x08, 0x00]));
+    const gz = await app.request("/assets/models/demo/lod0.glb", {
+      headers: { "accept-encoding": "gzip" }
+    });
+    expect(gz.status).toBe(200);
+    expect(gz.headers.get("content-encoding")).toBe("gzip");
+    expect(gz.headers.get("vary")).toBe("accept-encoding");
+
+    const by_id = await app.request("/assets/asset_demo?lod=0");
+    expect(by_id.status).toBe(200);
+
+    await rm(dir, { recursive: true, force: true });
   });
 });

@@ -50,6 +50,21 @@ type OrderResponse = {
   status: string;
 };
 
+type ExportArtifact = {
+  id: string;
+  name: string;
+  mime: string;
+  sha256: string;
+  size: number;
+  download_url?: string;
+  url?: string;
+};
+
+type ExportResponse = {
+  export_id: string;
+  artifacts: ExportArtifact[];
+};
+
 function make_error(status: number, message: string, body?: unknown): ApiError {
   return { code: `http.${status}`, message, status, body };
 }
@@ -113,6 +128,13 @@ export function create_api_core_client(base_url: string) {
         body: JSON.stringify(payload)
       }),
     get_order: (order_id: string) => request<unknown>(`/orders/${order_id}`),
+    create_exports: (project_id: string, revision_id: string, format: "json" | "pdf" = "json") =>
+      request<ExportResponse>("/exports", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project_id, revision_id, format })
+      }),
+    get_export: (export_id: string) => request<ExportResponse>(`/exports/${export_id}`),
     quote: (project_id: string, revision_id: string) =>
       request<QuoteResponse>(`/projects/${project_id}/revisions/${revision_id}/quote`, {
         method: "POST",

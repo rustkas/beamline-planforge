@@ -3,7 +3,7 @@
   import { onMount } from "svelte";
   import { app_state } from "../lib/state";
   import { resolve_asset_url } from "../lib/assets";
-  import { load_material_catalog, pick_primary_material_id, resolve_material } from "../lib/three/materials";
+  import { load_material_catalog, pick_primary_material_id } from "../lib/three/materials";
   import GltfNode from "./GltfNode.svelte";
 
   type RenderNode = {
@@ -33,9 +33,8 @@
     instr.kind === "overlay_labels" ? instr.labels : []
   );
 
-  function material_for_node(node: RenderNode): { color: string; roughness?: number; metalness?: number } {
-    const id = pick_primary_material_id(node.material_overrides);
-    return resolve_material(id);
+  function material_id_for_node(node: RenderNode): string {
+    return pick_primary_material_id(node.material_overrides);
   }
 
   onMount(() => {
@@ -52,13 +51,13 @@
     <directionalLight position={[3, 4, 2]} intensity={0.8} />
 
     {#each nodes as node}
-      {@const material = material_for_node(node)}
+      {@const material_id = material_id_for_node(node)}
       {@const asset = node.gltf_key ? assets[node.gltf_key] : undefined}
       {@const asset_uri = asset?.uri ? resolve_asset_url(asset.uri) : ""}
       <GltfNode
         uri={asset_uri}
         position={[node.transform?.position_m?.x ?? 0, 0, node.transform?.position_m?.z ?? 0]}
-        material_id={material.id}
+        material_id={material_id}
       />
       {#if node.source_object_id && highlight_ids.has(node.source_object_id)}
         <mesh position={[node.transform?.position_m?.x ?? 0, 0, node.transform?.position_m?.z ?? 0]}>

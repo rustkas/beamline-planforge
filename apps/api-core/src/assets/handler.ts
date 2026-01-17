@@ -45,7 +45,10 @@ function cache_control(file_path: string): string {
   return "public, max-age=31536000, immutable";
 }
 
-export async function read_asset(relative_path: string): Promise<{
+export async function read_asset(
+  relative_path: string,
+  options?: { if_none_match?: string | null; accept_encoding?: string | null }
+): Promise<{
   ok: boolean;
   status: number;
   body?: Uint8Array;
@@ -58,12 +61,31 @@ export async function read_asset(relative_path: string): Promise<{
   }
 
   try {
-    const info = await stat(resolved);
+    const accept_encoding = options?.accept_encoding ?? "";
+    const wants_gzip = accept_encoding.includes("gzip");
+    const gzip_path = `${resolved}.gz`;
+    const gz_info = wants_gzip ? await stat(gzip_path).catch(() => null) : null;
+    const use_gzip = !!gz_info?.isFile();
+
+    const target_path = use_gzip ? gzip_path : resolved;
+    const info = await stat(target_path);
     if (!info.isFile()) {
       return { ok: false, status: 404 };
     }
-    const bytes = await readFile(resolved);
     const etag = `W/"${info.size}-${info.mtimeMs}"`;
+    if (options?.if_none_match && options.if_none_match === etag) {
+      return {
+        ok: true,
+        status: 304,
+        headers: {
+          "cache-control": cache_control(resolved),
+          etag,
+          ...(use_gzip ? { "content-encoding": "gzip", vary: "accept-encoding" } : {})
+        }
+      };
+    }
+
+    const bytes = await readFile(target_path);
     return {
       ok: true,
       status: 200,
@@ -71,7 +93,8 @@ export async function read_asset(relative_path: string): Promise<{
       headers: {
         "content-type": content_type(resolved),
         "cache-control": cache_control(resolved),
-        etag
+        etag,
+        ...(use_gzip ? { "content-encoding": "gzip", vary: "accept-encoding" } : {})
       }
     };
   } catch {

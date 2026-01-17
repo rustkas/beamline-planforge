@@ -11,6 +11,7 @@
   } from "../lib/state";
   import AgentChat from "./AgentChat.svelte";
   import PluginsPanel from "./PluginsPanel.svelte";
+  import { create_api_core_client } from "../lib/api_core_client";
 
   export let projectId: string | null = null;
 
@@ -20,6 +21,14 @@
   let xInput = "";
   let inputError = "";
   let initialized = false;
+  let exportBusy = false;
+  let exportError = "";
+  let exportArtifacts: Array<{
+    id: string;
+    name: string;
+    download_url?: string;
+    url?: string;
+  }> = [];
 
   $: if (!initialized) {
     const state = $app_state;
@@ -66,6 +75,31 @@
   function format_money(value: any): string {
     if (!value || typeof value.amount !== "number") return "-";
     return `${value.amount} ${value.currency ?? ""}`.trim();
+  }
+
+  async function request_exports(format: "json" | "pdf"): Promise<void> {
+    if ($app_state.mode !== "server") return;
+    if (!$app_state.project_id || !$app_state.revision_id) return;
+    exportBusy = true;
+    exportError = "";
+    try {
+      const api = create_api_core_client($app_state.api_base_url);
+      const res = await api.create_exports($app_state.project_id, $app_state.revision_id, format);
+      if (!res.ok) {
+        exportError = res.error.message;
+        return;
+      }
+      exportArtifacts = res.data.artifacts.map((artifact) => ({
+        id: artifact.id,
+        name: artifact.name,
+        download_url: artifact.download_url ? `${$app_state.api_base_url}${artifact.download_url}` : undefined,
+        url: artifact.url
+      }));
+    } catch (err) {
+      exportError = err instanceof Error ? err.message : "Export failed";
+    } finally {
+      exportBusy = false;
+    }
   }
 
   onMount(async () => {
@@ -192,6 +226,40 @@
       </details>
     {:else}
       <p class="meta">No quote yet.</p>
+    {/if}
+  </div>
+
+  <div class="exports">
+    <h3>Exports</h3>
+    {#if $app_state.mode !== "server"}
+      <p class="meta">Exports are available in server mode.</p>
+    {:else}
+      <div class="row">
+        <button type="button" on:click={() => request_exports("json")} disabled={exportBusy}>
+          Download specs
+        </button>
+        <button type="button" on:click={() => request_exports("pdf")} disabled={exportBusy}>
+          Download PDF
+        </button>
+      </div>
+      {#if exportError}
+        <div class="error">{exportError}</div>
+      {/if}
+      {#if exportArtifacts.length > 0}
+        <ul>
+          {#each exportArtifacts as artifact}
+            <li>
+              {#if artifact.download_url}
+                <a href={artifact.download_url} target="_blank" rel="noreferrer">{artifact.name}</a>
+              {:else if artifact.url}
+                <a href={artifact.url} target="_blank" rel="noreferrer">{artifact.name}</a>
+              {:else}
+                {artifact.name}
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </div>
 

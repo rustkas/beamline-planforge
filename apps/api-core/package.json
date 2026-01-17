@@ -7,13 +7,15 @@
     "dev": "bun run src/main.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",
-    "test:db": "DATABASE_URL=postgres://planforge:planforge@localhost:5432/planforge bun test"
+    "test:db": "DATABASE_URL=postgres://planforge:planforge@localhost:5432/planforge bun test",
+    "setup:playwright": "playwright install chromium"
   },
   "dependencies": {
     "@planforge/core-contracts": "workspace:*",
     "@planforge/plugin-sdk": "workspace:*",
     "@planforge/plugin-runtime": "workspace:*",
     "hono": "^4.6.4",
+    "playwright": "^1.49.0",
     "postgres": "^3.4.4"
   },
   "devDependencies": {

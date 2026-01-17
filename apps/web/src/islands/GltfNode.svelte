@@ -12,8 +12,12 @@
   let load_error = "";
   let current_uri = "";
 
+  function current_material() {
+    return resolve_material(material_id);
+  }
+
   function apply_material(root: Group): void {
-    const material_def = resolve_material(material_id);
+    const material_def = current_material();
     const color = new Color(material_def.color);
     const material = new MeshStandardMaterial({
       color,
@@ -62,8 +66,9 @@
     <primitive object={scene} />
   </group>
 {:else}
+  {@const material_def = current_material()}
   <mesh position={position}>
     <boxGeometry args={[0.6, 0.7, 0.6]} />
-    <meshStandardMaterial color={load_error ? "#ef4444" : "#94a3b8"} />
+    <meshStandardMaterial color={load_error ? "#ef4444" : material_def.color} />
   </mesh>
 {/if}

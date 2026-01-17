@@ -1,0 +1,2 @@
+ALTER TABLE catalog_items
+  ADD COLUMN IF NOT EXISTS region_tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];

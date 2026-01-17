@@ -25,13 +25,14 @@ export class DbStore {
     const items = list_catalog_items();
     for (const item of items) {
       await this.db`
-        INSERT INTO catalog_items (id, sku, kind, title, price, attrs, catalog_version)
+        INSERT INTO catalog_items (id, sku, kind, title, price, region_tags, attrs, catalog_version)
         VALUES (
           ${item.id},
           ${item.sku},
           ${item.kind},
           ${item.title},
           ${item.price},
+          ${item.region_tags},
           ${item.attrs},
           ${CATALOG_VERSION}
         )
@@ -40,6 +41,7 @@ export class DbStore {
           kind = EXCLUDED.kind,
           title = EXCLUDED.title,
           price = EXCLUDED.price,
+          region_tags = EXCLUDED.region_tags,
           attrs = EXCLUDED.attrs,
           catalog_version = EXCLUDED.catalog_version
       `;

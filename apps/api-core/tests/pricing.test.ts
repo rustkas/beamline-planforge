@@ -8,7 +8,7 @@ function fixture(): Record<string, unknown> {
       project_id: "proj_demo_001",
       revision_id: "rev_0001",
       units: "mm",
-      ruleset_version: "pricing_ruleset_0.1.0"
+      ruleset_version: "pricing_ruleset_v1"
     },
     room: {
       size_mm: { width: 3200, depth: 2600, height: 2700 },
@@ -27,6 +27,21 @@ function fixture(): Record<string, unknown> {
             rotation_deg: 0
           },
           dims_mm: { width: 600, depth: 600, height: 720 },
+          material_slots: {
+            front: "mat_front_white",
+            body: "mat_body_white",
+            top: "mat_top_oak"
+          }
+        },
+        {
+          id: "obj_hood",
+          kind: "appliance",
+          catalog_item_id: "appliance_hood_basic",
+          transform_mm: {
+            position_mm: { x: 1600, y: 0 },
+            rotation_deg: 0
+          },
+          dims_mm: { width: 600, depth: 600, height: 400 },
           material_slots: {}
         }
       ]
@@ -40,13 +55,16 @@ function fixture(): Record<string, unknown> {
 
 describe("pricing", () => {
   test("computes quote deterministically", () => {
-    const res = compute_quote(fixture(), "pricing_ruleset_0.1.0");
+    const res = compute_quote(fixture(), "pricing_ruleset_v1");
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.quote.items.length).toBeGreaterThan(1);
       const codes = res.quote.items.map((item) => item.code);
-      expect(codes).toContain("pricing.adjustment.delivery");
-      expect(codes).toContain("pricing.adjustment.installation");
+      expect(codes).toContain("service.svc-delivery-std");
+      expect(codes).toContain("service.svc-install");
+      expect(codes).toContain("material.mat-front-white");
+      expect(codes).toContain("material.mat-body-white");
+      expect(codes).toContain("appliance.app-hood-basic");
       expect(res.quote.total.amount).toBeGreaterThan(0);
     }
   });

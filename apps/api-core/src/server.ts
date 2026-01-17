@@ -20,10 +20,12 @@ import { get_wasi_plugin_info, load_wasi_manifest, resolve_wasi_plugin_path } fr
 import { run_wasi_export, run_wasi_validate, type WasiError } from "./wasi/runner";
 import { create_license_manager } from "./license/manager";
 import { generate_exports } from "./exports/generate";
+import { ExportStore } from "./exports/store";
 import { read_asset } from "./assets/handler";
 
 let store: Store;
 let license_manager: Awaited<ReturnType<typeof create_license_manager>>;
+let export_store: ExportStore;
 
 type ErrorResponse = { error: { code: string; message: string; details?: Record<string, unknown> } };
 
@@ -55,6 +57,7 @@ export async function create_app(): Promise<Hono> {
   const app = new Hono();
   store = await create_store();
   license_manager = await create_license_manager();
+  export_store = new ExportStore();
 
   app.use("*", cors({ origin: "*" }));
   app.use("*", async (c, next) => {
@@ -66,11 +69,46 @@ export async function create_app(): Promise<Hono> {
 
   app.get("/health", (c) => c.json({ ok: true, version: "0.1.0" }));
 
+  app.get("/assets/:asset_id", async (c) => {
+    const asset_id = c.req.param("asset_id");
+    const lod = Number(c.req.query("lod") ?? "0");
+    const normalized_lod = Number.isFinite(lod) && lod >= 0 ? Math.floor(lod) : 0;
+    const gltf_key = asset_id.startsWith("asset_") ? asset_id.slice("asset_".length) : asset_id;
+    const rel = `models/${gltf_key}/lod${normalized_lod}.glb`;
+
+    const result = await read_asset(rel, {
+      if_none_match: c.req.header("if-none-match"),
+      accept_encoding: c.req.header("accept-encoding")
+    });
+    if (!result.ok || !result.headers) {
+      return c.json(error_response("asset.not_found", "Asset not found"), result.status);
+    }
+    if (result.status === 304) {
+      return new Response(null, { status: 304, headers: result.headers });
+    }
+    if (!result.body) {
+      return c.json(error_response("asset.not_found", "Asset not found"), 404);
+    }
+    return new Response(result.body, {
+      status: 200,
+      headers: result.headers
+    });
+  });
+
   app.get("/assets/*", async (c) => {
     const rel = c.req.path.replace(/^\/assets\//, "");
-    const result = await read_asset(rel);
-    if (!result.ok || !result.body || !result.headers) {
+    const result = await read_asset(rel, {
+      if_none_match: c.req.header("if-none-match"),
+      accept_encoding: c.req.header("accept-encoding")
+    });
+    if (!result.ok || !result.headers) {
       return c.json(error_response("asset.not_found", "Asset not found"), result.status);
+    }
+    if (result.status === 304) {
+      return new Response(null, { status: 304, headers: result.headers });
+    }
+    if (!result.body) {
+      return c.json(error_response("asset.not_found", "Asset not found"), 404);
     }
     return new Response(result.body, {
       status: 200,
@@ -265,7 +303,9 @@ export async function create_app(): Promise<Hono> {
       );
     }
 
-    const quote_res = compute_quote(revision.kitchen_state, ruleset_version);
+    const quote_res = compute_quote(revision.kitchen_state, ruleset_version, {
+      region: body.pricing_context?.region
+    });
     if (!quote_res.ok) {
       return c.json(error_response(quote_res.error.code, quote_res.error.message, quote_res.error.details), 422);
     }
@@ -446,7 +486,7 @@ export async function create_app(): Promise<Hono> {
       return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
 
-    const artifacts = generate_exports({ kitchen_state: revision.kitchen_state });
+    const artifacts = await generate_exports({ kitchen_state: revision.kitchen_state });
 
     const export_plugin_id = process.env.WASI_EXPORT_PLUGIN_ID ?? "";
     if (export_plugin_id.length > 0) {
@@ -508,7 +548,39 @@ export async function create_app(): Promise<Hono> {
       }
     }
 
-    return c.json({ artifacts });
+    const export_id = `exp_${crypto.randomUUID().replace(/-/g, "")}`;
+    const stored = await export_store.save_export({
+      export_id,
+      project_id: body.project_id,
+      revision_id: body.revision_id,
+      artifacts
+    });
+
+    return c.json({ export_id: stored.export_id, artifacts: stored.artifacts });
+  });
+
+  app.get("/exports/:export_id", async (c) => {
+    const export_id = c.req.param("export_id");
+    const stored = export_store.get_export(export_id);
+    if (!stored) {
+      return c.json(error_response("export.not_found", "Export not found"), 404);
+    }
+    return c.json(stored);
+  });
+
+  app.get("/exports/:export_id/artifacts/:artifact_id", async (c) => {
+    const { export_id, artifact_id } = c.req.param();
+    const result = await export_store.get_artifact(export_id, artifact_id);
+    if (!result.ok || !result.bytes || !result.mime) {
+      return c.json(error_response("artifact.not_found", "Artifact not found"), result.status);
+    }
+    return new Response(result.bytes, {
+      status: 200,
+      headers: {
+        "content-type": result.mime,
+        "cache-control": "public, max-age=31536000, immutable"
+      }
+    });
   });
 
   app.post("/projects/:project_id/revisions/:revision_id/orders", async (c) => {
