@@ -5,7 +5,7 @@ This document describes the deterministic WASM build pipeline for PlanForge core
 ## Targets
 
 - Web runtime: `wasm32-unknown-unknown` via `wasm-pack --target web`
-- Server runtime: `wasm32-wasi` via `cargo build --target wasm32-wasi --release`
+- Server runtime: `wasm32-wasip1` via `cargo build --target wasm32-wasip1 --release`
 
 ## Commands
 
@@ -51,4 +51,3 @@ If hashes differ, the command fails.
 - `plugins/template-wasm-wasi`
 - `plugins/demo-wasm-web`
 - `plugins/demo-wasi-constraints`
-

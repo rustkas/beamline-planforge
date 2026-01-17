@@ -122,10 +122,10 @@ async function build_web(dir: string, options: build_options, out_name: string):
 async function build_wasi(dir: string, options: build_options): Promise<void> {
   await ensure_dir(options.out_dir);
   const env = options.target_dir ? { CARGO_TARGET_DIR: options.target_dir } : undefined;
-  await run("cargo", ["build", "--target", "wasm32-wasi", "--release"], dir, env);
+  await run("cargo", ["build", "--target", "wasm32-wasip1", "--release"], dir, env);
   const crate = await parse_crate_name(dir);
   const wasm_name = `${normalize_wasm_name(crate)}.wasm`;
-  const source = path.join(options.target_dir ?? path.join(dir, "target"), "wasm32-wasi", "release", wasm_name);
+  const source = path.join(options.target_dir ?? path.join(dir, "target"), "wasm32-wasip1", "release", wasm_name);
   await copy_file(source, path.join(options.out_dir, "plugin.wasm"));
 }
 
