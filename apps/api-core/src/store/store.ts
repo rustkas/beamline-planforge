@@ -44,6 +44,15 @@ export type QuoteItem = {
   meta?: Record<string, unknown>;
 };
 
+export type QuoteDiagnostic = {
+  plugin_id: string;
+  ok: boolean;
+  added_items: number;
+  added_adjustments: number;
+  errors: string[];
+  warnings: string[];
+};
+
 export type Quote = {
   quote_id: string;
   project_id: string;
@@ -53,6 +62,7 @@ export type Quote = {
   currency: string;
   total: Money;
   items: QuoteItem[];
+  diagnostics?: QuoteDiagnostic[];
   meta?: Record<string, unknown>;
 };
 
@@ -155,7 +165,11 @@ export class InMemoryStore {
     return revision;
   }
 
-  create_quote(project_id: string, revision_id: string, quote: Omit<Quote, "quote_id" | "project_id" | "revision_id" | "created_at">): Quote | null {
+  create_quote(
+    project_id: string,
+    revision_id: string,
+    quote: Omit<Quote, "quote_id" | "project_id" | "revision_id" | "created_at">
+  ): Quote | null {
     const project = this.projects.get(project_id);
     if (!project) return null;
     const revision = this.get_revision(project_id, revision_id);
@@ -172,6 +186,7 @@ export class InMemoryStore {
       currency: quote.currency,
       total: quote.total,
       items: quote.items,
+      diagnostics: quote.diagnostics,
       meta: quote.meta
     };
 
@@ -190,6 +205,14 @@ export class InMemoryStore {
 
   list_quotes(project_id: string): Quote[] {
     return this.quotes.get(project_id) ?? [];
+  }
+
+  find_quote(quote_id: string): Quote | null {
+    for (const [project_id, list] of this.quotes.entries()) {
+      const found = list.find((q) => q.quote_id === quote_id);
+      if (found) return found;
+    }
+    return null;
   }
 
   create_order(args: {

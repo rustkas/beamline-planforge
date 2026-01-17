@@ -29,7 +29,21 @@ function compute_amount(qty: number, unit_price: Money): Money {
   return { currency: unit_price.currency, amount: round_2(qty * unit_price.amount) };
 }
 
-export function compute_quote(kitchen_state: unknown): { ok: true; quote: Quote } | { ok: false; error: PricingError } {
+export function compute_quote(
+  kitchen_state: unknown,
+  ruleset_version: string
+): { ok: true; quote: Quote } | { ok: false; error: PricingError } {
+  if (ruleset_version !== PRICING_RULESET_VERSION) {
+    return {
+      ok: false,
+      error: {
+        code: "pricing.ruleset_mismatch",
+        message: "Unsupported pricing ruleset",
+        details: { ruleset_version, expected: PRICING_RULESET_VERSION }
+      }
+    };
+  }
+
   const state = kitchen_state as any;
   const catalog_version = state?.catalog_refs?.modules_catalog_version;
   if (catalog_version !== MODULES_CATALOG_VERSION) {
@@ -82,7 +96,7 @@ export function compute_quote(kitchen_state: unknown): { ok: true; quote: Quote 
   return {
     ok: true,
     quote: {
-      ruleset_version: PRICING_RULESET_VERSION,
+      ruleset_version,
       currency: total.currency,
       total,
       items,

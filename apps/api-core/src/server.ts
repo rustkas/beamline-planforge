@@ -5,6 +5,7 @@ import { create_store } from "./store/store";
 import { apply_patch, derive_render_model, validate_layout } from "./wasm/core_wasm";
 import type { proposed_patch, violation } from "@planforge/plugin-sdk";
 import { list_modules, MODULES_CATALOG_VERSION } from "./catalog/catalog";
+import { apply_pricing_hooks } from "./pricing/pipeline";
 import { compute_quote, PRICING_RULESET_VERSION } from "./pricing/ruleset";
 
 const store = create_store();
@@ -165,36 +166,78 @@ export function create_app(): Hono {
     return c.json(render_model);
   });
 
-  app.post("/projects/:project_id/revisions/:revision_id/quote", (c) => {
-    const { project_id, revision_id } = c.req.param();
+  app.post("/quotes", async (c) => {
+    let body: { project_id?: string; revision_id?: string; ruleset_version?: string; pricing_context?: Record<string, string> };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+
+    if (!body?.project_id || !body?.revision_id) {
+      return c.json(error_response("quote.invalid_request", "project_id and revision_id are required"), 400);
+    }
+
+    const { project_id, revision_id } = body;
     const revision = store.get_revision(project_id, revision_id);
     if (!revision) {
       return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
 
     const state = revision.kitchen_state as any;
-    const ruleset_version = state?.project?.ruleset_version ?? PRICING_RULESET_VERSION;
-    if (ruleset_version !== PRICING_RULESET_VERSION) {
+    const ruleset_version = body.ruleset_version ?? state?.project?.ruleset_version ?? PRICING_RULESET_VERSION;
+    if (state?.project?.ruleset_version && ruleset_version !== state.project.ruleset_version) {
       return c.json(
-        error_response("pricing.ruleset_mismatch", "Unsupported pricing ruleset", {
+        error_response("pricing.ruleset_mismatch", "Ruleset version mismatch", {
           ruleset_version,
-          expected: PRICING_RULESET_VERSION
+          expected: state.project.ruleset_version
         }),
         400
       );
     }
 
-    const quote_res = compute_quote(revision.kitchen_state);
+    const quote_res = compute_quote(revision.kitchen_state, ruleset_version);
     if (!quote_res.ok) {
       return c.json(error_response(quote_res.error.code, quote_res.error.message, quote_res.error.details), 422);
     }
 
-    const stored = store.create_quote(project_id, revision_id, quote_res.quote);
+    const merged = await apply_pricing_hooks({
+      project_id,
+      revision_id,
+      kitchen_state: revision.kitchen_state,
+      base_quote: quote_res.quote,
+      pricing_context: body.pricing_context
+    });
+
+    const stored = store.create_quote(project_id, revision_id, {
+      ...merged.quote,
+      diagnostics: merged.diagnostics
+    });
     if (!stored) {
       return c.json(error_response("project.not_found", "Project not found"), 404);
     }
 
     return c.json(stored);
+  });
+
+  app.get("/quotes/:quote_id", (c) => {
+    const quote_id = c.req.param("quote_id");
+    const quote = store.find_quote(quote_id);
+    if (!quote) {
+      return c.json(error_response("quote.not_found", "Quote not found"), 404);
+    }
+    return c.json(quote);
+  });
+
+  app.post("/projects/:project_id/revisions/:revision_id/quote", async (c) => {
+    const { project_id, revision_id } = c.req.param();
+    return app.fetch(
+      new Request(new URL("/quotes", c.req.url), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project_id, revision_id })
+      })
+    );
   });
 
   app.get("/catalog/modules", (c) =>
