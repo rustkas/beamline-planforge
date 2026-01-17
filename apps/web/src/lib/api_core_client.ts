@@ -23,6 +23,7 @@ type RevisionResponse = {
 };
 
 type QuoteResponse = {
+  quote_id: string;
   ruleset_version: string;
   total: { currency: string; amount: number };
   currency: string;
