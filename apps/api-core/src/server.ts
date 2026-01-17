@@ -7,6 +7,8 @@ import type { proposed_patch, violation } from "@planforge/plugin-sdk";
 import { list_modules, MODULES_CATALOG_VERSION } from "./catalog/catalog";
 import { apply_pricing_hooks } from "./pricing/pipeline";
 import { compute_quote, PRICING_RULESET_VERSION } from "./pricing/ruleset";
+import { resolve_wasi_plugin_path } from "./wasi/registry";
+import { run_wasi_validate, type WasiError } from "./wasi/runner";
 
 let store: Store;
 
@@ -244,6 +246,41 @@ export async function create_app(): Promise<Hono> {
   app.get("/catalog/modules", (c) =>
     c.json({ version: MODULES_CATALOG_VERSION, items: list_modules() })
   );
+
+  app.post("/wasi/validate", async (c) => {
+    let body: { plugin_id?: string; kitchen_state?: unknown; mode?: "drag" | "full" };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+
+    if (!body?.plugin_id || !body.kitchen_state) {
+      return c.json(error_response("wasi.invalid_request", "plugin_id and kitchen_state required"), 400);
+    }
+
+    const schema = validate_kitchen_state(body.kitchen_state);
+    if (!schema.ok) {
+      return c.json(error_response("schema.invalid", "KitchenState schema invalid", { errors: schema.errors }), 400);
+    }
+
+    const wasm_path = await resolve_wasi_plugin_path(body.plugin_id);
+    if (!wasm_path) {
+      return c.json(error_response("wasi.plugin_not_found", "WASI plugin not found"), 404);
+    }
+
+    try {
+      const output = await run_wasi_validate({
+        wasm_path,
+        input: { kitchen_state: body.kitchen_state, mode: body.mode ?? "full" },
+        timeout_ms: Number(process.env.WASI_TIMEOUT_MS ?? 2000)
+      });
+      return c.json(output);
+    } catch (error) {
+      const err = error as WasiError;
+      return c.json(error_response(err.code ?? "wasi.error", err.message ?? "WASI error", err.details), 502);
+    }
+  });
 
   app.post("/projects/:project_id/revisions/:revision_id/orders", async (c) => {
     const { project_id, revision_id } = c.req.param();
