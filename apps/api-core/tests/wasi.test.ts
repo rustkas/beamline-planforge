@@ -45,6 +45,10 @@ describe("wasi validate", () => {
   }
 
   test("runs wasm plugin and returns violations", async () => {
+    process.env.WASI_PLUGINS_DIR = `${process.cwd()}/../../plugins`;
+    process.env.WASMTIME_BIN = `${process.env.HOME ?? "/home/rustkas"}/.wasmtime/bin/wasmtime`;
+    process.env.WASMTIME_CACHE_DIR = "/tmp/wasmtime-cache";
+    process.env.XDG_CACHE_HOME = "/tmp/wasmtime-cache-home";
     const app = await create_app();
     const kitchen_state = fixture();
     const res = await app.request("/wasi/validate", {

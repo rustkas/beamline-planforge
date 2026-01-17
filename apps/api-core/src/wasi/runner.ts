@@ -21,8 +21,14 @@ export async function run_wasi_validate(args: {
   const payload = JSON.stringify(args.input);
   const stdin = new TextEncoder().encode(payload);
 
+  const wasmtime_bin = process.env.WASMTIME_BIN ?? "wasmtime";
+  const cache_dir = process.env.WASMTIME_CACHE_DIR ?? "/tmp/wasmtime-cache";
+  const xdg_cache = process.env.XDG_CACHE_HOME ?? "/tmp/wasmtime-cache-home";
+  await mkdir(cache_dir, { recursive: true });
+  await mkdir(xdg_cache, { recursive: true });
   const proc = Bun.spawn({
-    cmd: ["wasmtime", "run", args.wasm_path],
+    cmd: [wasmtime_bin, "run", args.wasm_path],
+    env: { ...process.env, WASMTIME_CACHE_DIR: cache_dir, XDG_CACHE_HOME: xdg_cache },
     stdin,
     stdout: "pipe",
     stderr: "pipe"
@@ -63,3 +69,4 @@ export async function run_wasi_validate(args: {
     } satisfies WasiError;
   }
 }
+import { mkdir } from "node:fs/promises";
