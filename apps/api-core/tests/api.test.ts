@@ -44,7 +44,7 @@ function fixture(): Record<string, unknown> {
 
 describe("api-core", () => {
   test("POST /projects creates project", async () => {
-    const app = create_app();
+    const app = await create_app();
     const res = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -57,7 +57,7 @@ describe("api-core", () => {
   });
 
   test("PATCH creates new revision", async () => {
-    const app = create_app();
+    const app = await create_app();
     const create = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -87,7 +87,7 @@ describe("api-core", () => {
   });
 
   test("Render returns nodes", async () => {
-    const app = create_app();
+    const app = await create_app();
     const create = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -108,7 +108,7 @@ describe("api-core", () => {
   });
 
   test("Quote returns deterministic items", async () => {
-    const app = create_app();
+    const app = await create_app();
     const create = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -129,7 +129,7 @@ describe("api-core", () => {
   });
 
   test("Order freezes quote", async () => {
-    const app = create_app();
+    const app = await create_app();
     const create = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -163,7 +163,7 @@ describe("api-core", () => {
   });
 
   test("Order rejects quote from another revision", async () => {
-    const app = create_app();
+    const app = await create_app();
     const create = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -204,7 +204,7 @@ describe("api-core", () => {
   });
 
   test("Order idempotency key returns same order", async () => {
-    const app = create_app();
+    const app = await create_app();
     const create = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -245,7 +245,7 @@ describe("api-core", () => {
   });
 
   test("GET /quotes/:id returns stored quote", async () => {
-    const app = create_app();
+    const app = await create_app();
     const create = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -267,7 +267,7 @@ describe("api-core", () => {
   });
 
   test("Invalid schema returns 400", async () => {
-    const app = create_app();
+    const app = await create_app();
     const res = await app.request("/projects", {
       method: "POST",
       headers: { "content-type": "application/json" },

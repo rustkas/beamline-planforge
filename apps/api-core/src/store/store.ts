@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash } from "node:crypto";
+import { canonical_json_stringify } from "./hash";
 
 export type RevisionMeta = {
   source: "user" | "agent" | "plugin" | "system";
@@ -101,7 +102,7 @@ export class InMemoryStore {
     this.persist_path = persist_path;
   }
 
-  create_project(initial_state: unknown, meta: RevisionMeta): { project: Project; revision: Revision } {
+  async create_project(initial_state: unknown, meta: RevisionMeta): Promise<{ project: Project; revision: Revision }> {
     const project_id = `proj_${crypto.randomUUID().replace(/-/g, "")}`;
     const revision_id = `rev_${crypto.randomUUID().replace(/-/g, "")}`;
     const created_at = new Date().toISOString();
@@ -126,20 +127,25 @@ export class InMemoryStore {
     return { project, revision };
   }
 
-  get_project(project_id: string): Project | null {
+  async get_project(project_id: string): Promise<Project | null> {
     return this.projects.get(project_id) ?? null;
   }
 
-  get_revision(project_id: string, revision_id: string): Revision | null {
+  async get_revision(project_id: string, revision_id: string): Promise<Revision | null> {
     const list = this.revisions.get(project_id) ?? [];
     return list.find((rev) => rev.revision_id === revision_id) ?? null;
   }
 
-  list_revisions(project_id: string): Revision[] {
+  async list_revisions(project_id: string): Promise<Revision[]> {
     return this.revisions.get(project_id) ?? [];
   }
 
-  create_revision(project_id: string, kitchen_state: unknown, parent_revision_id: string, meta: RevisionMeta): Revision | null {
+  async create_revision(
+    project_id: string,
+    kitchen_state: unknown,
+    parent_revision_id: string,
+    meta: RevisionMeta
+  ): Promise<Revision | null> {
     const project = this.projects.get(project_id);
     if (!project) return null;
 
@@ -167,14 +173,14 @@ export class InMemoryStore {
     return revision;
   }
 
-  create_quote(
+  async create_quote(
     project_id: string,
     revision_id: string,
     quote: Omit<Quote, "quote_id" | "project_id" | "revision_id" | "created_at">
-  ): Quote | null {
+  ): Promise<Quote | null> {
     const project = this.projects.get(project_id);
     if (!project) return null;
-    const revision = this.get_revision(project_id, revision_id);
+    const revision = await this.get_revision(project_id, revision_id);
     if (!revision) return null;
 
     const quote_id = `quote_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -200,16 +206,16 @@ export class InMemoryStore {
     return stored;
   }
 
-  get_quote(project_id: string, quote_id: string): Quote | null {
+  async get_quote(project_id: string, quote_id: string): Promise<Quote | null> {
     const list = this.quotes.get(project_id) ?? [];
     return list.find((q) => q.quote_id === quote_id) ?? null;
   }
 
-  list_quotes(project_id: string): Quote[] {
+  async list_quotes(project_id: string): Promise<Quote[]> {
     return this.quotes.get(project_id) ?? [];
   }
 
-  find_quote(quote_id: string): Quote | null {
+  async find_quote(quote_id: string): Promise<Quote | null> {
     for (const [project_id, list] of this.quotes.entries()) {
       const found = list.find((q) => q.quote_id === quote_id);
       if (found) return found;
@@ -217,17 +223,17 @@ export class InMemoryStore {
     return null;
   }
 
-  create_order(args: {
+  async create_order(args: {
     project_id: string;
     revision_id: string;
     quote: Quote;
     customer: Order["customer"];
     delivery: Order["delivery"];
     idempotency_key?: string;
-  }): Order | null {
+  }): Promise<Order | null> {
     const project = this.projects.get(args.project_id);
     if (!project) return null;
-    const revision = this.get_revision(args.project_id, args.revision_id);
+    const revision = await this.get_revision(args.project_id, args.revision_id);
     if (!revision) return null;
 
     if (args.idempotency_key) {
@@ -261,12 +267,12 @@ export class InMemoryStore {
     return order;
   }
 
-  get_order(project_id: string, order_id: string): Order | null {
+  async get_order(project_id: string, order_id: string): Promise<Order | null> {
     const list = this.orders.get(project_id) ?? [];
     return list.find((o) => o.order_id === order_id) ?? null;
   }
 
-  find_order(order_id: string): Order | null {
+  async find_order(order_id: string): Promise<Order | null> {
     for (const list of this.orders.values()) {
       const found = list.find((o) => o.order_id === order_id);
       if (found) return found;
@@ -289,12 +295,40 @@ export class InMemoryStore {
   }
 
   private hash_state(state: unknown): string {
-    const json = JSON.stringify(state);
+    const json = canonical_json_stringify(state);
     return createHash("sha256").update(json).digest("hex");
   }
 }
 
-export function create_store(): InMemoryStore {
+export type Store = Pick<
+  InMemoryStore,
+  | "create_project"
+  | "get_project"
+  | "get_revision"
+  | "list_revisions"
+  | "create_revision"
+  | "create_quote"
+  | "get_quote"
+  | "find_quote"
+  | "list_quotes"
+  | "create_order"
+  | "get_order"
+  | "find_order"
+>;
+
+export async function create_store(): Promise<Store> {
+  const database_url = process.env.DATABASE_URL ?? "";
+  if (database_url.length > 0) {
+    const { connect_db } = await import("../storage/db");
+    const { run_migrations } = await import("../storage/migrations");
+    const { DbStore } = await import("./db_store");
+    const db = connect_db();
+    await run_migrations(db);
+    const store = new DbStore(db);
+    await store.seed_catalog();
+    return store;
+  }
+
   const persist_path = process.env.PLANFORGE_PERSIST_PATH ?? null;
   return new InMemoryStore(persist_path && persist_path.length > 0 ? persist_path : null);
 }

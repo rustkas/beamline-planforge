@@ -12,7 +12,8 @@
     "@planforge/core-contracts": "workspace:*",
     "@planforge/plugin-sdk": "workspace:*",
     "@planforge/plugin-runtime": "workspace:*",
-    "hono": "^4.6.4"
+    "hono": "^4.6.4",
+    "postgres": "^3.4.4"
   },
   "devDependencies": {
     "bun-types": "^1.3.6",

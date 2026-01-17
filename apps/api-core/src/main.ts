@@ -1,7 +1,7 @@
 import { create_app } from "./server";
 
 const port = Number(process.env.PORT ?? 3001);
-const app = create_app();
+const app = await create_app();
 
 Bun.serve({
   port,

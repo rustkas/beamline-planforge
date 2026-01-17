@@ -1,14 +1,14 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { validate_kitchen_state } from "./validation/schemas";
-import { create_store } from "./store/store";
+import { create_store, type Store } from "./store/store";
 import { apply_patch, derive_render_model, validate_layout } from "./wasm/core_wasm";
 import type { proposed_patch, violation } from "@planforge/plugin-sdk";
 import { list_modules, MODULES_CATALOG_VERSION } from "./catalog/catalog";
 import { apply_pricing_hooks } from "./pricing/pipeline";
 import { compute_quote, PRICING_RULESET_VERSION } from "./pricing/ruleset";
 
-const store = create_store();
+let store: Store;
 
 type ErrorResponse = { error: { code: string; message: string; details?: Record<string, unknown> } };
 
@@ -28,8 +28,9 @@ function extract_violations(payload: unknown): violation[] {
   return [];
 }
 
-export function create_app(): Hono {
+export async function create_app(): Promise<Hono> {
   const app = new Hono();
+  store = await create_store();
 
   app.use("*", cors({ origin: "*" }));
   app.use("*", async (c, next) => {
@@ -59,12 +60,12 @@ export function create_app(): Hono {
       return c.json({ violations: validation.violations }, 422);
     }
 
-    const { project, revision } = store.create_project(body, { source: "user" });
+    const { project, revision } = await store.create_project(body, { source: "user" });
     return c.json({ project_id: project.project_id, revision_id: revision.revision_id, violations: [] });
   });
 
-  app.get("/projects/:project_id", (c) => {
-    const project = store.get_project(c.req.param("project_id"));
+  app.get("/projects/:project_id", async (c) => {
+    const project = await store.get_project(c.req.param("project_id"));
     if (!project) {
       return c.json(error_response("project.not_found", "Project not found"), 404);
     }
@@ -75,13 +76,13 @@ export function create_app(): Hono {
     });
   });
 
-  app.get("/projects/:project_id/revisions", (c) => {
+  app.get("/projects/:project_id/revisions", async (c) => {
     const project_id = c.req.param("project_id");
-    const project = store.get_project(project_id);
+    const project = await store.get_project(project_id);
     if (!project) {
       return c.json(error_response("project.not_found", "Project not found"), 404);
     }
-    const revisions = store.list_revisions(project_id).map((rev) => ({
+    const revisions = (await store.list_revisions(project_id)).map((rev) => ({
       revision_id: rev.revision_id,
       created_at: rev.created_at,
       parent_revision_id: rev.parent_revision_id ?? null,
@@ -90,9 +91,9 @@ export function create_app(): Hono {
     return c.json(revisions);
   });
 
-  app.get("/projects/:project_id/revisions/:revision_id", (c) => {
+  app.get("/projects/:project_id/revisions/:revision_id", async (c) => {
     const { project_id, revision_id } = c.req.param();
-    const revision = store.get_revision(project_id, revision_id);
+    const revision = await store.get_revision(project_id, revision_id);
     if (!revision) {
       return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
@@ -106,7 +107,7 @@ export function create_app(): Hono {
 
   app.post("/projects/:project_id/revisions/:revision_id/patch", async (c) => {
     const { project_id, revision_id } = c.req.param();
-    const revision = store.get_revision(project_id, revision_id);
+    const revision = await store.get_revision(project_id, revision_id);
     if (!revision) {
       return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
@@ -134,7 +135,7 @@ export function create_app(): Hono {
       return c.json({ violations: validation.violations }, 422);
     }
 
-    const new_revision = store.create_revision(project_id, patched, revision_id, { source: patch.source ?? "user" });
+    const new_revision = await store.create_revision(project_id, patched, revision_id, { source: patch.source ?? "user" });
     if (!new_revision) {
       return c.json(error_response("project.not_found", "Project not found"), 404);
     }
@@ -144,7 +145,7 @@ export function create_app(): Hono {
 
   app.post("/projects/:project_id/revisions/:revision_id/render", async (c) => {
     const { project_id, revision_id } = c.req.param();
-    const revision = store.get_revision(project_id, revision_id);
+    const revision = await store.get_revision(project_id, revision_id);
     if (!revision) {
       return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
@@ -179,7 +180,7 @@ export function create_app(): Hono {
     }
 
     const { project_id, revision_id } = body;
-    const revision = store.get_revision(project_id, revision_id);
+    const revision = await store.get_revision(project_id, revision_id);
     if (!revision) {
       return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
@@ -209,7 +210,7 @@ export function create_app(): Hono {
       pricing_context: body.pricing_context
     });
 
-    const stored = store.create_quote(project_id, revision_id, {
+    const stored = await store.create_quote(project_id, revision_id, {
       ...merged.quote,
       diagnostics: merged.diagnostics
     });
@@ -220,9 +221,9 @@ export function create_app(): Hono {
     return c.json(stored);
   });
 
-  app.get("/quotes/:quote_id", (c) => {
+  app.get("/quotes/:quote_id", async (c) => {
     const quote_id = c.req.param("quote_id");
-    const quote = store.find_quote(quote_id);
+    const quote = await store.find_quote(quote_id);
     if (!quote) {
       return c.json(error_response("quote.not_found", "Quote not found"), 404);
     }
@@ -261,9 +262,9 @@ export function create_app(): Hono {
     );
   });
 
-  app.get("/projects/:project_id/orders/:order_id", (c) => {
+  app.get("/projects/:project_id/orders/:order_id", async (c) => {
     const { project_id, order_id } = c.req.param();
-    const order = store.get_order(project_id, order_id);
+    const order = await store.get_order(project_id, order_id);
     if (!order) {
       return c.json(error_response("order.not_found", "Order not found"), 404);
     }
@@ -291,12 +292,12 @@ export function create_app(): Hono {
     const project_id = body.project_id;
     const revision_id = body.revision_id;
 
-    const revision = store.get_revision(project_id, revision_id);
+    const revision = await store.get_revision(project_id, revision_id);
     if (!revision) {
       return c.json(error_response("revision.not_found", "Revision not found"), 404);
     }
 
-    const quote = store.get_quote(project_id, body.quote_id) ?? store.find_quote(body.quote_id);
+    const quote = (await store.get_quote(project_id, body.quote_id)) ?? (await store.find_quote(body.quote_id));
     if (!quote) {
       return c.json(error_response("quote.not_found", "Quote not found"), 404);
     }
@@ -319,7 +320,7 @@ export function create_app(): Hono {
     }
 
     const idempotency_key = c.req.header("idempotency-key") ?? undefined;
-    const order = store.create_order({
+    const order = await store.create_order({
       project_id,
       revision_id,
       quote,
@@ -335,8 +336,8 @@ export function create_app(): Hono {
     return c.json({ order_id: order.order_id, status: order.status });
   });
 
-  app.get("/orders/:order_id", (c) => {
-    const order = store.find_order(c.req.param("order_id"));
+  app.get("/orders/:order_id", async (c) => {
+    const order = await store.find_order(c.req.param("order_id"));
     if (!order) {
       return c.json(error_response("order.not_found", "Order not found"), 404);
     }
