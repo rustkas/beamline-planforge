@@ -25,3 +25,6 @@ export type {
 } from "./pricing/quote_merge";
 export { run_pricing_post_quote_hooks } from "./pricing/run_pricing_hooks";
 export type { pricing_hooks_result } from "./pricing/run_pricing_hooks";
+export { verify_plugin_license } from "./security/license_gate";
+export { load_trust_store } from "./security/trust_store";
+export type { trust_store } from "./security/trust_store";

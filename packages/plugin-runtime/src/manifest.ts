@@ -9,12 +9,22 @@ export function validate_manifest(manifest: unknown): manifest_validation {
 }
 
 export type plugin_manifest = {
+  manifest_version: string;
   id: string;
   name: string;
   version: string;
+  description: string;
+  license: string;
+  publisher: { name: string; url?: string };
   runtime: {
     kind: "web" | "wasm" | "server";
-    entry: { js?: string; wasm?: string; module?: string };
+    entry: { js?: string; wasm?: string; module?: string; css?: string };
+    min_host_version: string;
+    compatibility: {
+      core_contracts: string;
+      core_wasm?: string;
+      host_api: string;
+    };
   };
   capabilities: {
     constraints: boolean;
@@ -28,6 +38,12 @@ export type plugin_manifest = {
       commands: unknown[];
     };
   };
+  integrity: {
+    channel: "oss" | "paid";
+    signature: { alg: "none" | "ed25519" | "ecdsa_p256"; value: string; kid?: string };
+    hashes: Record<string, string>;
+  };
+  configuration_schema: Record<string, unknown>;
   permissions: {
     network: { allow: boolean; allowlist: string[] };
     storage: { allow: boolean; scopes: string[] };
