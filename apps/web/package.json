@@ -8,7 +8,8 @@
     "build": "astro build",
     "build:ci": "ASTRO_TELEMETRY_DISABLED=1 bun run build",
     "preview": "astro preview",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "bun test"
   },
   "dependencies": {
     "@astrojs/node": "^8.2.2",

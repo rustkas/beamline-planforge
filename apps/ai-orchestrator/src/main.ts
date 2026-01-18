@@ -6,6 +6,7 @@ import fixture from "./assets/kitchen_state.fixture.json";
 import { build_variants } from "./agent/proposals";
 import type { violation } from "@planforge/plugin-sdk";
 import { plan_patch } from "./agent/planner";
+import { build_explanations, summarize_violations } from "./agent/refine";
 
 const port = Number(process.env.ORCHESTRATOR_PORT ?? 3002);
 const api_base_url = process.env.API_CORE_BASE_URL ?? "http://localhost:3001";
@@ -87,57 +88,6 @@ app.post("/sessions/:session_id/proposals", async (c) => {
   }
   return c.json(stored.data);
 });
-
-function summarize_violations(list: violation[]): Array<{ code: string; severity: string; count: number }> {
-  const map = new Map<string, { code: string; severity: string; count: number }>();
-  for (const v of list) {
-    const key = `${v.code}:${v.severity}`;
-    const entry = map.get(key) ?? { code: v.code, severity: v.severity, count: 0 };
-    entry.count += 1;
-    map.set(key, entry);
-  }
-  return Array.from(map.values());
-}
-
-function build_explanations(command: string): Array<{ group: string; title: string; detail?: string }> {
-  const explanations: Array<{ group: string; title: string; detail?: string }> = [];
-  if (/sink/i.test(command) || /мойк/i.test(command)) {
-    explanations.push({
-      group: "utilities",
-      title: "Sink prioritized near water/window",
-      detail: "Placed sink to align with nearby utility or opening."
-    });
-  }
-  if (/hob/i.test(command) || /варочн/i.test(command)) {
-    explanations.push({
-      group: "utilities",
-      title: "Hob moved toward ventilation",
-      detail: "Placed hob closer to vent utility where possible."
-    });
-  }
-  if (/passage/i.test(command) || /проход/i.test(command)) {
-    explanations.push({
-      group: "constraints",
-      title: "Increased passage clearance",
-      detail: "Shifted base objects away from wall to widen passage."
-    });
-  }
-  if (/upper/i.test(command) || /верхн/i.test(command)) {
-    explanations.push({
-      group: "ergonomics",
-      title: "Upper cabinets removed",
-      detail: "Removed upper cabinets to keep the space open."
-    });
-  }
-  if (explanations.length === 0) {
-    explanations.push({
-      group: "rules",
-      title: "Applied requested change",
-      detail: "Change applied deterministically by planner rules."
-    });
-  }
-  return explanations;
-}
 
 app.post("/sessions/:session_id/refine/preview", async (c) => {
   const session_id = c.req.param("session_id");

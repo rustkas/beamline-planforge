@@ -4,6 +4,7 @@
   import { create_core_client } from "../lib/core_adapter";
   import { create_api_core_client } from "../lib/api_core_client";
   import { create_ai_orchestrator_client } from "../lib/ai_orchestrator_client";
+  import { build_material_patch } from "../lib/wizard_patches";
   import LayoutStep from "../components/ProjectWizard/LayoutStep.svelte";
 
   const apiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL ?? "http://localhost:3001";
@@ -598,21 +599,14 @@
     if (!projectId || !revisionId || !kitchenState) return;
     const target = materialTarget(kitchenState);
     if (!target?.id) return;
-    const index = findObjectIndex(kitchenState, target.id);
-    if (index < 0) return;
-    const current = target.material_slots ?? {};
-    const op = Object.prototype.hasOwnProperty.call(current, slot) ? "replace" : "add";
-    const patch = {
-      ops: [
-        {
-          op,
-          path: `/layout/objects/${index}/material_slots/${slot}`,
-          value
-        }
-      ],
-      reason: `Set material ${slot} to ${value}`,
-      source: "user"
-    };
+    const result = build_material_patch({
+      kitchen_state: kitchenState,
+      object_id: target.id,
+      slot,
+      value
+    });
+    if (!result) return;
+    const patch = result.patch;
     const res = await api.apply_patch(projectId, revisionId, patch);
     if (!res.ok) {
       error = res.error.message;
