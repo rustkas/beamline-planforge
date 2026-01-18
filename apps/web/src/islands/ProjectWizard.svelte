@@ -4,7 +4,16 @@
   import { create_core_client } from "../lib/core_adapter";
   import { create_api_core_client } from "../lib/api_core_client";
   import { create_ai_orchestrator_client } from "../lib/ai_orchestrator_client";
-  import { build_material_patch } from "../lib/wizard_patches";
+  import { is_draft_dirty } from "../core/wizard/dirty";
+  import {
+    apply_refine_apply_result,
+    apply_refine_preview_result,
+    build_refine_apply_request,
+    build_refine_preview_request
+  } from "../core/wizard/refine";
+  import { apply_material_patch_result, build_material_patch_request } from "../core/wizard/materials";
+  import { apply_exports_result, build_exports_request } from "../core/wizard/exports";
+  import type { wizard_effect, wizard_state, export_status } from "../core/wizard/types";
   import LayoutStep from "../components/ProjectWizard/LayoutStep.svelte";
 
   const apiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL ?? "http://localhost:3001";
@@ -112,6 +121,7 @@
   let materialOverrides: Record<string, string> = {};
   let materialTargetId: string | null = null;
 
+  let exportStatus: export_status = "idle";
   let exportLoading = false;
   let exportError: string | null = null;
   let exportArtifacts: Array<{ id: string; name: string; mime: string; sha256: string; size: number; url?: string; download_url?: string }> = [];
@@ -141,6 +151,43 @@
       return structuredClone(state);
     }
     return JSON.parse(JSON.stringify(state));
+  }
+
+  function getWizardState(): wizard_state {
+    return {
+      project_id: projectId ?? undefined,
+      revision_id: revisionId ?? undefined,
+      applied_revision_id: appliedRevisionId ?? undefined,
+      session_id: sessionId ?? undefined,
+      draft_dirty: draftDirty,
+      render_status: renderStatus,
+      export_status: exportStatus,
+      refine_preview: refinePreview,
+      refine_error: refineError,
+      export_artifacts: exportArtifacts
+    };
+  }
+
+  function applyStatePatch(patch: Partial<wizard_state>): void {
+    if (patch.applied_revision_id !== undefined) appliedRevisionId = patch.applied_revision_id ?? null;
+    if (patch.revision_id !== undefined) revisionId = patch.revision_id ?? null;
+    if (patch.draft_dirty !== undefined) draftDirty = patch.draft_dirty;
+    if (patch.render_status !== undefined) renderStatus = patch.render_status;
+    if (patch.export_status !== undefined) exportStatus = patch.export_status;
+    if (patch.refine_preview !== undefined) refinePreview = patch.refine_preview;
+    if (patch.refine_error !== undefined) refineError = patch.refine_error ?? null;
+    if (patch.export_artifacts !== undefined) exportArtifacts = patch.export_artifacts;
+  }
+
+  async function runEffects(effects: wizard_effect[]): Promise<void> {
+    for (const effect of effects) {
+      if (effect.kind === "render_refresh") {
+        await refreshRender();
+      }
+      if (effect.kind === "quote_refresh") {
+        scheduleQuoteRefresh();
+      }
+    }
   }
 
   function findObject(state: any, objectId: string): any | null {
@@ -316,6 +363,9 @@
     } catch (err) {
       draftRenderError = err instanceof Error ? err.message : "Draft render failed";
     }
+    if (wizardVariant === "B") {
+      draftDirty = is_draft_dirty(draftKitchenState, appliedKitchenState);
+    }
   }
 
   async function initLayoutStep(): Promise<void> {
@@ -369,7 +419,6 @@
     obj.transform_mm.position_mm.x = next.x;
     obj.transform_mm.position_mm.y = next.y;
     draftKitchenState = nextState;
-    draftDirty = true;
     focusObjectIds = [];
     await refreshDraftRender();
   }
@@ -377,7 +426,6 @@
   async function resetDraft(): Promise<void> {
     if (!appliedKitchenState) return;
     draftKitchenState = cloneKitchenState(appliedKitchenState);
-    draftDirty = false;
     focusObjectIds = [];
     await refreshDraftRender();
   }
@@ -436,7 +484,8 @@
   async function applyRevisionUpdate(
     newRevisionId: string,
     violations: unknown[],
-    historyEntry?: { proposal_id: string; kind?: string; metrics?: Record<string, unknown> }
+    historyEntry?: { proposal_id: string; kind?: string; metrics?: Record<string, unknown> },
+    options?: { skipEffects?: boolean }
   ): Promise<void> {
     appliedRevisionId = newRevisionId;
     revisionId = newRevisionId;
@@ -470,8 +519,10 @@
           await refreshDraftRender();
         }
       }
-      await refreshRender();
-      scheduleQuoteRefresh();
+      if (!options?.skipEffects) {
+        await refreshRender();
+        scheduleQuoteRefresh();
+      }
     }
   }
 
@@ -529,50 +580,48 @@
   }
 
   async function previewRefine(command: string): Promise<void> {
-    if (!command.trim()) return;
-    if (!sessionId) {
-      await ensureSession();
-    }
+    const request = build_refine_preview_request(getWizardState(), command);
+    if (!request) return;
+    if (!sessionId) await ensureSession();
     if (!sessionId) return;
     refineLoading = true;
     refineError = null;
-    const res = await orchestrator.preview_refine(sessionId, command);
+    const res = await orchestrator.preview_refine(request.session_id, request.command);
     refineLoading = false;
     if (!res.ok) {
       refineError = res.error.message;
       return;
     }
-    if (!res.data.ok) {
-      refineError = res.data.message ?? "Refine preview failed";
-      return;
-    }
-    refinePreview = res.data;
+    const patch = apply_refine_preview_result(getWizardState(), res.data);
+    applyStatePatch(patch.state_patch);
   }
 
   async function applyRefine(command: string): Promise<void> {
-    if (!command.trim()) return;
-    if (!sessionId) {
-      await ensureSession();
-    }
+    const request = build_refine_apply_request(getWizardState(), command);
+    if (!request) return;
+    if (!sessionId) await ensureSession();
     if (!sessionId) return;
     refineLoading = true;
     refineError = null;
-    const res = await orchestrator.apply_refine(sessionId, command);
+    const res = await orchestrator.apply_refine(request.session_id, request.command);
     refineLoading = false;
     if (!res.ok) {
       refineError = res.error.message;
       return;
     }
-    if (!res.data.ok || !res.data.new_revision_id) {
-      refineError = res.data.message ?? "Refine apply failed";
-      refinePreview = null;
-      return;
-    }
-    refinePreview = null;
-    await applyRevisionUpdate(res.data.new_revision_id, res.data.violations ?? [], {
-      proposal_id: `refine-${Date.now()}`,
-      kind: "refine"
-    });
+    const patch = apply_refine_apply_result(getWizardState(), res.data);
+    applyStatePatch(patch.state_patch);
+    if (!res.data.ok || !res.data.new_revision_id) return;
+    await applyRevisionUpdate(
+      res.data.new_revision_id,
+      res.data.violations ?? [],
+      {
+        proposal_id: `refine-${Date.now()}`,
+        kind: "refine"
+      },
+      { skipEffects: true }
+    );
+    await runEffects(patch.effects);
   }
 
   function materialOptions(): Array<{ id: string; label: string }> {
@@ -599,20 +648,22 @@
     if (!projectId || !revisionId || !kitchenState) return;
     const target = materialTarget(kitchenState);
     if (!target?.id) return;
-    const result = build_material_patch({
+    const request = build_material_patch_request({
       kitchen_state: kitchenState,
       object_id: target.id,
       slot,
       value
     });
-    if (!result) return;
-    const patch = result.patch;
-    const res = await api.apply_patch(projectId, revisionId, patch);
+    if (!request) return;
+    const res = await api.apply_patch(projectId, revisionId, request.patch);
     if (!res.ok) {
       error = res.error.message;
       return;
     }
-    await applyRevisionUpdate(res.data.new_revision_id, res.data.violations ?? []);
+    const patchResult = apply_material_patch_result(getWizardState());
+    applyStatePatch(patchResult.state_patch);
+    await applyRevisionUpdate(res.data.new_revision_id, res.data.violations ?? [], undefined, { skipEffects: true });
+    await runEffects(patchResult.effects);
   }
 
   function handleMaterialChange(slot: string, event: Event): void {
@@ -624,23 +675,25 @@
   }
 
   async function requestExport(format: "json" | "pdf"): Promise<void> {
-    if (!projectId || !revisionId) return;
+    const request = build_exports_request(getWizardState(), format);
+    if (!request) return;
+    exportStatus = "loading";
     exportLoading = true;
     exportError = null;
-    const res = await api.create_exports(projectId, revisionId, format);
-    exportLoading = false;
+    const res = await api.create_exports(request.project_id, request.revision_id, request.format);
     if (!res.ok) {
+      exportStatus = "error";
       exportError = res.error.message;
+      exportLoading = false;
       return;
     }
-    const next = res.data.artifacts ?? [];
-    const merged = [...exportArtifacts];
-    for (const art of next) {
-      if (!merged.some((a) => a.id === art.id)) {
-        merged.push(art);
-      }
-    }
-    exportArtifacts = merged;
+    const merged = [
+      ...exportArtifacts,
+      ...(res.data.artifacts ?? []).filter((art) => !exportArtifacts.some((a) => a.id === art.id))
+    ];
+    const patch = apply_exports_result(getWizardState(), { artifacts: merged });
+    applyStatePatch(patch.state_patch);
+    exportLoading = false;
   }
   function handlePick(objectId: string | null): void {
     selectedObjectId = objectId;
@@ -863,6 +916,7 @@
     wizardVariant === "B" && selectedObjectId && selectionState
       ? getObjectPosition(selectionState, selectedObjectId)
       : null;
+  $: exportLoading = exportStatus === "loading";
 
   $: if (currentStep() === "materials" && kitchenState) {
     const target = materialTarget(kitchenState);

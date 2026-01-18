@@ -8,5 +8,6 @@
       "@planforge/plugin-runtime": ["../../packages/plugin-runtime/src/index.ts"],
       "@planforge/plugin-sdk": ["../../packages/plugin-sdk/src/index.ts"]
     }
-  }
+  },
+  "exclude": ["tests"]
 }
