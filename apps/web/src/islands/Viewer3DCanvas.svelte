@@ -26,6 +26,8 @@
   export let render_model: unknown | null = null;
   export let render_instructions: RenderInstruction[] | null = null;
   export let selected_object_id: string | null = null;
+  export let violations: Array<{ code: string; severity: string; object_ids: string[] }> | null = null;
+  export let focus_object_ids: string[] | null = null;
   export let on_pick: ((object_id: string | null) => void) | null = null;
 
   $: resolved_model = render_model === null ? null : render_model ?? $app_state.render_model;
@@ -34,12 +36,25 @@
   $: nodes = ((resolved_model as any)?.nodes as RenderNode[]) ?? [];
   $: assets = ((resolved_model as any)?.assets?.gltf as RenderAssets) ?? {};
   $: instructions = resolved_instructions ?? [];
+  $: focus_ids = new Set(focus_object_ids ?? []);
+  $: focus_active = (focus_object_ids?.length ?? 0) > 0;
   $: highlight_ids = new Set(
     [
       ...instructions.flatMap((instr) => (instr.kind === "highlight" ? instr.object_ids : [])),
-      ...(selected_object_id ? [selected_object_id] : [])
+      ...(selected_object_id ? [selected_object_id] : []),
+      ...focus_ids
     ]
   );
+  $: violation_counts = new Map<string, number>();
+  $: if (violations) {
+    for (const v of violations) {
+      if (!Array.isArray(v.object_ids)) continue;
+      for (const id of v.object_ids) {
+        violation_counts.set(id, (violation_counts.get(id) ?? 0) + 1);
+      }
+    }
+  }
+  $: violation_ids = new Set(violation_counts.keys());
   $: overlay_labels = instructions.flatMap((instr) =>
     instr.kind === "overlay_labels" ? instr.labels : []
   );
@@ -72,10 +87,13 @@
         object_id={node.source_object_id ?? null}
         on:pick={(event) => on_pick?.(event.detail.object_id)}
       />
-      {#if node.source_object_id && highlight_ids.has(node.source_object_id)}
+      {#if node.source_object_id &&
+        (focus_active
+          ? focus_ids.has(node.source_object_id)
+          : highlight_ids.has(node.source_object_id) || violation_ids.has(node.source_object_id))}
         <mesh position={[node.transform?.position_m?.x ?? 0, 0, node.transform?.position_m?.z ?? 0]}>
           <boxGeometry args={[0.66, 0.76, 0.66]} />
-          <meshStandardMaterial color="#f59e0b" wireframe />
+          <meshStandardMaterial color={violation_ids.has(node.source_object_id) ? "#ef4444" : "#f59e0b"} wireframe />
         </mesh>
       {/if}
     {/each}
@@ -84,6 +102,13 @@
     <div class="labels">
       {#each overlay_labels as label}
         <div class="label">{label.text}</div>
+      {/each}
+    </div>
+  {/if}
+  {#if violation_counts.size > 0}
+    <div class="labels violations">
+      {#each Array.from(violation_counts.entries()) as [objectId, count]}
+        <div class="label">Violation {objectId}: {count}</div>
       {/each}
     </div>
   {/if}
@@ -105,6 +130,10 @@
     display: grid;
     gap: 0.35rem;
     z-index: 2;
+  }
+  .violations {
+    top: auto;
+    bottom: 0.75rem;
   }
   .label {
     background: rgba(15, 23, 42, 0.85);

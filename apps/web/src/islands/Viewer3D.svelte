@@ -5,6 +5,8 @@
   export let render_model: unknown | null = null;
   export let render_instructions: unknown[] | null = null;
   export let selected_object_id: string | null = null;
+  export let violations: Array<{ code: string; severity: string; object_ids: string[] }> | null = null;
+  export let focus_object_ids: string[] | null = null;
   export let on_pick: ((object_id: string | null) => void) | null = null;
 
   let CanvasView: typeof SvelteComponent | null = null;
@@ -26,6 +28,8 @@
     {render_model}
     render_instructions={render_instructions}
     {selected_object_id}
+    {violations}
+    {focus_object_ids}
     {on_pick}
   />
 {:else}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { load_kitchen_state_fixture } from "../lib/fixtures";
+  import { create_core_client } from "../lib/core_adapter";
   import { create_api_core_client } from "../lib/api_core_client";
   import { create_ai_orchestrator_client } from "../lib/ai_orchestrator_client";
   import LayoutStep from "../components/ProjectWizard/LayoutStep.svelte";
@@ -9,6 +10,9 @@
   const api = create_api_core_client(apiBaseUrl);
   const orchestratorBaseUrl = import.meta.env.PUBLIC_ORCHESTRATOR_BASE_URL ?? "http://localhost:3002";
   const orchestrator = create_ai_orchestrator_client(orchestratorBaseUrl);
+  const core = create_core_client();
+
+  export let wizardVariant: "A" | "B" = "A";
 
   const steps = ["room", "style", "layout", "materials", "quote", "checkout"] as const;
   type Step = (typeof steps)[number];
@@ -70,7 +74,20 @@
   let renderModel: unknown | null = null;
   let renderQuality: "draft" | "quality" = "draft";
   let renderError: string | null = null;
+  let renderStatus: "idle" | "loading" | "ready" | "error" = "idle";
+  let renderNodesCount: number | null = null;
+  let renderMs: number | null = null;
+  let layoutViolations: Array<{ code: string; severity: string; object_ids: string[] }> = [];
+  let appliedKitchenState: any = null;
+  let draftKitchenState: any = null;
+  let draftRenderModel: unknown | null = null;
+  let draftRenderError: string | null = null;
+  let draftDirty = false;
+  let focusObjectIds: string[] = [];
+  let layoutInitialized = false;
+  let appliedSnapshots: Record<string, any> = {};
   let selectedObjectId: string | null = null;
+  let selectedObjectPosition: { x: number; y: number } | null = null;
   let baseRevisionId: string | null = null;
   let appliedHistory: Array<{
     time: string;
@@ -98,6 +115,27 @@
 
   function baseKey(projectId: string): string {
     return `planforge_wizard_base::${projectId}`;
+  }
+
+  function cloneKitchenState(state: any): any {
+    if (!state) return state;
+    if (typeof structuredClone === "function") {
+      return structuredClone(state);
+    }
+    return JSON.parse(JSON.stringify(state));
+  }
+
+  function findObject(state: any, objectId: string): any | null {
+    const objects = state?.layout?.objects;
+    if (!Array.isArray(objects)) return null;
+    return objects.find((obj: any) => obj?.id === objectId) ?? null;
+  }
+
+  function getObjectPosition(state: any, objectId: string): { x: number; y: number } | null {
+    const obj = findObject(state, objectId);
+    const pos = obj?.transform_mm?.position_mm;
+    if (!pos || typeof pos.x !== "number" || typeof pos.y !== "number") return null;
+    return { x: pos.x, y: pos.y };
   }
 
   function currentStep(): Step {
@@ -154,6 +192,14 @@
 
   function back(): void {
     if (stepIndex > 0) stepIndex -= 1;
+  }
+
+  async function guardDiscardDraft(): Promise<boolean> {
+    if (wizardVariant !== "B" || !draftDirty) return true;
+    const proceed = window.confirm("Discard draft changes?");
+    if (!proceed) return false;
+    await resetDraft();
+    return true;
   }
 
   function updateState(): void {
@@ -231,15 +277,114 @@
     proposalsGeneratedAt = new Date().toLocaleTimeString();
   }
 
+  async function refreshDraftRender(): Promise<void> {
+    if (!draftKitchenState) return;
+    draftRenderError = null;
+    const start = performance.now();
+    try {
+      const res = await core.derive_render_model(draftKitchenState, renderQuality);
+      draftRenderModel = res;
+      renderMs = Math.round(performance.now() - start);
+      renderNodesCount = Array.isArray((res as any)?.nodes) ? (res as any).nodes.length : 0;
+      if (selectedObjectId && !findObject(draftKitchenState, selectedObjectId)) {
+        selectedObjectId = null;
+      }
+    } catch (err) {
+      draftRenderError = err instanceof Error ? err.message : "Draft render failed";
+    }
+  }
+
+  async function initLayoutStep(): Promise<void> {
+    if (!kitchenState) return;
+    appliedKitchenState = cloneKitchenState(kitchenState);
+    draftKitchenState = cloneKitchenState(kitchenState);
+    draftDirty = false;
+    focusObjectIds = [];
+    const appliedId = revisionId ?? baseRevisionId ?? "base";
+    if (appliedId && !appliedSnapshots[appliedId]) {
+      appliedSnapshots[appliedId] = cloneKitchenState(kitchenState);
+    }
+    if (!appliedRevisionId && revisionId) {
+      appliedRevisionId = revisionId;
+    }
+    await refreshDraftRender();
+  }
+
   async function refreshRender(): Promise<void> {
     if (!projectId || !revisionId) return;
     renderError = null;
+    renderStatus = "loading";
+    const start = performance.now();
     const res = await api.render(projectId, revisionId, renderQuality);
     if (!res.ok) {
       renderError = res.error.message;
+      renderStatus = "error";
       return;
     }
     renderModel = res.data;
+    renderMs = Math.round(performance.now() - start);
+    renderNodesCount = Array.isArray((renderModel as any)?.nodes) ? (renderModel as any).nodes.length : 0;
+    renderStatus = "ready";
+
+    if (selectedObjectId) {
+      const nodes = (renderModel as any)?.nodes;
+      const exists = Array.isArray(nodes)
+        ? nodes.some((node: any) => node?.source_object_id === selectedObjectId)
+        : false;
+      if (!exists) {
+        selectedObjectId = null;
+      }
+    }
+  }
+
+  async function updateDraftPosition(next: { x: number; y: number }): Promise<void> {
+    if (!draftKitchenState || !selectedObjectId) return;
+    const nextState = cloneKitchenState(draftKitchenState);
+    const obj = findObject(nextState, selectedObjectId);
+    if (!obj?.transform_mm?.position_mm) return;
+    obj.transform_mm.position_mm.x = next.x;
+    obj.transform_mm.position_mm.y = next.y;
+    draftKitchenState = nextState;
+    draftDirty = true;
+    focusObjectIds = [];
+    await refreshDraftRender();
+  }
+
+  async function resetDraft(): Promise<void> {
+    if (!appliedKitchenState) return;
+    draftKitchenState = cloneKitchenState(appliedKitchenState);
+    draftDirty = false;
+    focusObjectIds = [];
+    await refreshDraftRender();
+  }
+
+  async function revertAppliedLocal(revision_id: string): Promise<void> {
+    const snapshot = appliedSnapshots[revision_id];
+    if (!snapshot) {
+      layoutError = "No local snapshot for that revision.";
+      return;
+    }
+    appliedKitchenState = cloneKitchenState(snapshot);
+    draftKitchenState = cloneKitchenState(snapshot);
+    appliedRevisionId = revision_id;
+    draftDirty = true;
+    focusObjectIds = [];
+    await refreshDraftRender();
+  }
+
+  function focusViolations(code: string | null): void {
+    if (!code) {
+      focusObjectIds = [];
+      return;
+    }
+    const ids = new Set<string>();
+    for (const v of layoutViolations) {
+      if (v.code !== code) continue;
+      for (const id of v.object_ids ?? []) {
+        ids.add(id);
+      }
+    }
+    focusObjectIds = Array.from(ids);
   }
 
   async function applyLayoutProposal(proposalId: string): Promise<void> {
@@ -258,6 +403,7 @@
     }
     appliedRevisionId = res.data.new_revision_id;
     revisionId = res.data.new_revision_id;
+    layoutViolations = Array.isArray(res.data.violations) ? res.data.violations : [];
     if (projectId) {
       const historyEntry = proposals.find((p) => p.proposal_id === proposalId);
       appliedHistory = [
@@ -277,6 +423,14 @@
       const next = await api.get_revision(projectId, revisionId);
       if (next.ok) {
         kitchenState = next.data.kitchen_state;
+        if (wizardVariant === "B") {
+          appliedKitchenState = cloneKitchenState(next.data.kitchen_state);
+          draftKitchenState = cloneKitchenState(next.data.kitchen_state);
+          appliedSnapshots[revisionId] = cloneKitchenState(next.data.kitchen_state);
+          draftDirty = false;
+          focusObjectIds = [];
+          await refreshDraftRender();
+        }
       }
       await refreshRender();
       scheduleQuoteRefresh();
@@ -306,17 +460,43 @@
     revisionId = baseRevisionId;
     appliedRevisionId = baseRevisionId;
     selectedObjectId = null;
+    layoutViolations = [];
+    if (projectId && revisionId) {
+      const next = await api.get_revision(projectId, revisionId);
+      if (next.ok) {
+        kitchenState = next.data.kitchen_state;
+        if (wizardVariant === "B") {
+          appliedKitchenState = cloneKitchenState(next.data.kitchen_state);
+          draftKitchenState = cloneKitchenState(next.data.kitchen_state);
+          appliedSnapshots[revisionId] = cloneKitchenState(next.data.kitchen_state);
+          draftDirty = false;
+          focusObjectIds = [];
+          await refreshDraftRender();
+        }
+      }
+    }
     await refreshRender();
     scheduleQuoteRefresh();
   }
 
   async function changeQuality(nextQuality: "draft" | "quality"): Promise<void> {
     renderQuality = nextQuality;
+    if (wizardVariant === "B") {
+      await refreshDraftRender();
+      return;
+    }
     await refreshRender();
   }
 
   function handlePick(objectId: string | null): void {
     selectedObjectId = objectId;
+    if (!objectId) {
+      focusObjectIds = [];
+      return;
+    }
+    if (wizardVariant === "B" && draftKitchenState && !findObject(draftKitchenState, objectId)) {
+      selectedObjectId = null;
+    }
   }
 
   function addOpening(kind: "door" | "window"): void {
@@ -410,6 +590,13 @@
       baseRevisionId = created.data.revision_id;
       localStorage.setItem(baseKey(projectId), baseRevisionId);
     }
+    if (wizardVariant === "B") {
+      appliedSnapshots[revisionId] = cloneKitchenState(kitchenState);
+      appliedKitchenState = cloneKitchenState(kitchenState);
+      draftKitchenState = cloneKitchenState(kitchenState);
+      draftDirty = false;
+      focusObjectIds = [];
+    }
     localStorage.setItem(storageKey(projectId), JSON.stringify({ revision_id: revisionId }));
     const storedHistory = localStorage.getItem(appliedKey(projectId));
     if (storedHistory) {
@@ -457,6 +644,14 @@
     orderId = res.data.order_id;
   }
 
+  $: if (wizardVariant === "B" && currentStep() === "layout" && !layoutInitialized && kitchenState) {
+    layoutInitialized = true;
+    void initLayoutStep();
+  }
+  $: if (wizardVariant === "B" && currentStep() !== "layout") {
+    layoutInitialized = false;
+  }
+
   onMount(async () => {
     kitchenState = await load_kitchen_state_fixture();
     roomWidth = kitchenState.room.size_mm.width;
@@ -487,13 +682,20 @@
       const storedBase = localStorage.getItem(baseKey(projectId));
       if (storedBase) baseRevisionId = storedBase;
     }
+
+    const handler = (event: BeforeUnloadEvent) => {
+      if (wizardVariant !== "B" || !draftDirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
   });
 
+  $: selectionState = wizardVariant === "B" ? draftKitchenState ?? kitchenState : kitchenState;
   $: selectedObject = (() => {
-    if (!kitchenState || !selectedObjectId) return null;
-    const objects = (kitchenState as any)?.layout?.objects;
-    if (!Array.isArray(objects)) return null;
-    const found = objects.find((obj: any) => obj.id === selectedObjectId);
+    if (!selectionState || !selectedObjectId) return null;
+    const found = findObject(selectionState, selectedObjectId);
     if (!found) return null;
     return {
       id: found.id,
@@ -503,6 +705,10 @@
       material_slots: found.material_slots
     };
   })();
+  $: selectedObjectPosition =
+    wizardVariant === "B" && selectedObjectId && selectionState
+      ? getObjectPosition(selectionState, selectedObjectId)
+      : null;
 </script>
 
 <section class="wizard">
@@ -515,7 +721,11 @@
     {#each steps as step, index}
       <button
         class:active={index === stepIndex}
-        on:click={() => (stepIndex = index)}
+        on:click={async () => {
+          if (index === stepIndex) return;
+          if (!(await guardDiscardDraft())) return;
+          stepIndex = index;
+        }}
         type="button"
       >
         {index + 1}. {step}
@@ -701,22 +911,36 @@
   {:else if currentStep() === "layout"}
     <div class="panel">
       <LayoutStep
+        wizardVariant={wizardVariant}
         proposals={proposals}
         loading={layoutLoading}
         error={layoutError}
         generatedAt={proposalsGeneratedAt}
         appliedRevisionId={appliedRevisionId}
         appliedHistory={appliedHistory}
-        renderModel={renderModel}
+        renderModel={wizardVariant === "B" ? draftRenderModel : renderModel}
         renderQuality={renderQuality}
         renderError={renderError}
+        renderStatus={renderStatus}
+        renderNodesCount={renderNodesCount}
+        renderMs={renderMs}
+        draftDirty={draftDirty}
+        draftError={draftRenderError}
+        serverRevisionId={revisionId}
         selectedObject={selectedObject}
+        selectedObjectPosition={selectedObjectPosition}
+        violations={layoutViolations}
+        focusObjectIds={focusObjectIds}
         canRevert={!!baseRevisionId}
         onGenerate={generateLayoutProposals}
         onApply={applyLayoutProposal}
         onRevert={revertToBase}
+        onRevertAppliedLocal={revertAppliedLocal}
         onQualityChange={changeQuality}
         onPickObject={handlePick}
+        onUpdateDraftPosition={updateDraftPosition}
+        onResetDraft={resetDraft}
+        onFocusViolations={focusViolations}
       />
       {#if quote}
         <div class="quote">
@@ -779,9 +1003,18 @@
   {/if}
 
   <footer class="actions">
-    <button on:click={back} disabled={stepIndex === 0 || loading}>Back</button>
     <button
-      on:click={() => {
+      on:click={async () => {
+        if (!(await guardDiscardDraft())) return;
+        back();
+      }}
+      disabled={stepIndex === 0 || loading}
+    >
+      Back
+    </button>
+    <button
+      on:click={async () => {
+        if (!(await guardDiscardDraft())) return;
         updateState();
         next();
       }}

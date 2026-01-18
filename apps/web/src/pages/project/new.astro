@@ -1,5 +1,7 @@
 ---
 import ProjectWizard from "../../islands/ProjectWizard.svelte";
+const variant = Astro.url.searchParams.get("variant");
+const wizardVariant = variant === "b" ? "B" : "A";
 ---
 <html lang="en">
   <head>
@@ -8,6 +10,6 @@ import ProjectWizard from "../../islands/ProjectWizard.svelte";
     <meta name="viewport" content="width=device-width, initial-scale=1" />
   </head>
   <body>
-    <ProjectWizard client:load />
+    <ProjectWizard client:load wizardVariant={wizardVariant} />
   </body>
 </html>
