@@ -8,7 +8,10 @@ import type {
   Quote,
   QuoteItem,
   Revision,
-  RevisionMeta
+  RevisionMeta,
+  Session,
+  SessionMessage,
+  SessionProposal
 } from "./store";
 import { list_catalog_items, CATALOG_VERSION } from "../catalog/catalog";
 import { list_rulesets } from "../pricing/ruleset_store";
@@ -291,5 +294,126 @@ export class DbStore {
       WHERE order_id = ${order_id}
     `;
     return rows[0] ?? null;
+  }
+
+  async create_session(project_id: string, revision_id: string): Promise<Session | null> {
+    const project = await this.get_project(project_id);
+    if (!project) return null;
+    const revision = await this.get_revision(project_id, revision_id);
+    if (!revision) return null;
+
+    const session_id = `sess_${crypto.randomUUID().replace(/-/g, "")}`;
+    const created_at = new Date().toISOString();
+    const session: Session = {
+      session_id,
+      project_id,
+      created_at,
+      last_revision_id: revision_id
+    };
+
+    await this.db`
+      INSERT INTO sessions (session_id, project_id, created_at, last_revision_id)
+      VALUES (${session.session_id}, ${session.project_id}, ${session.created_at}, ${session.last_revision_id})
+    `;
+
+    return session;
+  }
+
+  async get_session(session_id: string): Promise<Session | null> {
+    const rows = await this.db<Session[]>`
+      SELECT session_id, project_id, created_at, last_revision_id
+      FROM sessions
+      WHERE session_id = ${session_id}
+    `;
+    return rows[0] ?? null;
+  }
+
+  async update_session_revision(session_id: string, revision_id: string): Promise<void> {
+    await this.db`
+      UPDATE sessions SET last_revision_id = ${revision_id} WHERE session_id = ${session_id}
+    `;
+  }
+
+  async add_message(message: Omit<SessionMessage, "message_id">): Promise<SessionMessage | null> {
+    const session = await this.get_session(message.session_id);
+    if (!session) return null;
+
+    const message_id = `msg_${crypto.randomUUID().replace(/-/g, "")}`;
+    const record: SessionMessage = { message_id, ...message };
+
+    await this.db`
+      INSERT INTO session_messages (message_id, session_id, role, content, ts)
+      VALUES (${record.message_id}, ${record.session_id}, ${record.role}, ${record.content}, ${record.ts})
+    `;
+    return record;
+  }
+
+  async list_messages(session_id: string): Promise<SessionMessage[]> {
+    return await this.db<SessionMessage[]>`
+      SELECT message_id, session_id, role, content, ts
+      FROM session_messages
+      WHERE session_id = ${session_id}
+      ORDER BY ts ASC
+    `;
+  }
+
+  async add_proposals(
+    session_id: string,
+    revision_id: string,
+    proposals: Array<{
+      variant_index: number;
+      patch: Record<string, unknown>;
+      rationale: Record<string, unknown>;
+      metrics?: Record<string, unknown>;
+      explanation_text?: string;
+    }>
+  ): Promise<SessionProposal[] | null> {
+    const session = await this.get_session(session_id);
+    if (!session) return null;
+
+    const created_at = new Date().toISOString();
+    const stored: SessionProposal[] = [];
+
+    for (const proposal of proposals) {
+      const proposal_id = `prop_${crypto.randomUUID().replace(/-/g, "")}`;
+      const record: SessionProposal = {
+        proposal_id,
+        session_id,
+        revision_id,
+        variant_index: proposal.variant_index,
+        patch: proposal.patch,
+        rationale: proposal.rationale,
+        metrics: proposal.metrics,
+        explanation_text: proposal.explanation_text,
+        created_at
+      };
+
+      await this.db`
+        INSERT INTO session_proposals (proposal_id, session_id, revision_id, variant_index, patch, rationale, metrics, explanation_text, created_at)
+        VALUES (
+          ${record.proposal_id},
+          ${record.session_id},
+          ${record.revision_id},
+          ${record.variant_index},
+          ${record.patch},
+          ${record.rationale},
+          ${record.metrics ?? null},
+          ${record.explanation_text ?? null},
+          ${record.created_at}
+        )
+      `;
+      stored.push(record);
+    }
+
+    return stored;
+  }
+
+  async list_proposals(session_id: string): Promise<SessionProposal[]> {
+    return await this.db<SessionProposal[]>`
+      SELECT proposal_id, session_id, revision_id, variant_index, patch, rationale, metrics, explanation_text, created_at
+      FROM session_proposals
+      WHERE session_id = ${session_id}
+      ORDER BY variant_index ASC, created_at ASC
+    `;
   }
 }

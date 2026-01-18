@@ -1,0 +1,59 @@
+{
+  "size_mm": { "width": 3600, "depth": 2800, "height": 2700 },
+  "openings": [
+    {
+      "id": "door_main",
+      "kind": "door",
+      "wall_id": "south",
+      "offset_mm": 200,
+      "width_mm": 900,
+      "height_mm": 2100,
+      "sill_height_mm": 0,
+      "swing": { "direction": "right", "radius_mm": 900 }
+    },
+    {
+      "id": "window_1",
+      "kind": "window",
+      "wall_id": "north",
+      "offset_mm": 800,
+      "width_mm": 1200,
+      "height_mm": 1200,
+      "sill_height_mm": 900
+    }
+  ],
+  "utilities": [
+    {
+      "id": "water_1",
+      "kind": "water",
+      "wall_id": "south",
+      "offset_mm": 1400,
+      "zone_radius_mm": 200
+    },
+    {
+      "id": "power_1",
+      "kind": "power",
+      "position_mm": { "x": 3200, "y": 200 },
+      "zone_radius_mm": 150
+    }
+  ],
+  "restricted_zones": [
+    {
+      "id": "gas_keepout",
+      "reason": "Gas safety clearance",
+      "aabb_mm": {
+        "min_mm": { "x": 3000, "y": 2400 },
+        "max_mm": { "x": 3600, "y": 2800 }
+      }
+    },
+    {
+      "id": "column_poly",
+      "reason": "Structural column",
+      "polygon_mm": [
+        { "x": 2000, "y": 1200 },
+        { "x": 2200, "y": 1200 },
+        { "x": 2200, "y": 1400 },
+        { "x": 2000, "y": 1400 }
+      ]
+    }
+  ]
+}

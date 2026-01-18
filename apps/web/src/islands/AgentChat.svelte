@@ -1,31 +1,20 @@
 <script lang="ts">
   import { app_state, run_agent_command } from "../lib/state";
 
-  type ChatMessage = { role: "user" | "assistant"; content: string };
-
   let command = "";
-  let messages: ChatMessage[] = [];
   let localError = "";
 
   async function send(): Promise<void> {
     const trimmed = command.trim();
     if (!trimmed) return;
     localError = "";
-    messages = [...messages, { role: "user", content: trimmed }];
     command = "";
 
     const result = await run_agent_command(trimmed);
     if (!result) {
       localError = $app_state.error ?? "Agent command failed";
-      messages = [...messages, { role: "assistant", content: localError }];
       return;
     }
-
-    const summary = result.ok
-      ? `Applied: ${result.message}. New revision: ${result.new_revision_id ?? "-"}`
-      : `Failed: ${result.message}`;
-
-    messages = [...messages, { role: "assistant", content: summary }];
   }
 
   function useExample(value: string): void {
@@ -45,10 +34,10 @@
   </div>
 
   <div class="messages">
-    {#if messages.length === 0}
+    {#if $app_state.session_messages.length === 0}
       <p class="meta">No messages yet.</p>
     {:else}
-      {#each messages as msg}
+      {#each $app_state.session_messages as msg}
         <div class={`msg ${msg.role}`}>{msg.content}</div>
       {/each}
     {/if}

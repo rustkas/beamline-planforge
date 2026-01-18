@@ -8,6 +8,12 @@ import layout_object_schema from "../schemas/layout_object.schema.json";
 import opening_schema from "../schemas/opening.schema.json";
 import utility_point_schema from "../schemas/utility_point.schema.json";
 import rect_zone_schema from "../schemas/rect_zone.schema.json";
+import restricted_zone_schema from "../schemas/restricted_zone.schema.json";
+import polygon_mm_schema from "../schemas/polygon_mm.schema.json";
+import aabb_mm_schema from "../schemas/aabb_mm.schema.json";
+import proposal_schema from "../schemas/proposal.schema.json";
+import proposal_metrics_schema from "../schemas/proposal_metrics.schema.json";
+import explanation_schema from "../schemas/explanation.schema.json";
 import point2_mm_schema from "../schemas/point2_mm.schema.json";
 import transform2d_mm_schema from "../schemas/transform2d_mm.schema.json";
 import transform3d_schema from "../schemas/transform3d.schema.json";
@@ -35,6 +41,12 @@ export function get_all_schemas(): readonly object[] {
     opening_schema,
     utility_point_schema,
     rect_zone_schema,
+    restricted_zone_schema,
+    polygon_mm_schema,
+    aabb_mm_schema,
+    proposal_schema,
+    proposal_metrics_schema,
+    explanation_schema,
     point2_mm_schema,
     transform2d_mm_schema,
     transform3d_schema,

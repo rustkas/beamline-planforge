@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/explanation.schema.json",
+  "title": "Explanation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "code", "severity", "title"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "code": { "type": "string", "minLength": 1 },
+    "severity": { "enum": ["info", "warning", "error"] },
+    "title": { "type": "string", "minLength": 1 },
+    "details": { "type": "string" },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "violation_codes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "object_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "rule_ids": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

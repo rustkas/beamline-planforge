@@ -1,10 +1,54 @@
 use crate::constraints::Footprint;
 use crate::geometry::aabb::Aabb;
 use crate::model::kitchen_state::KitchenState;
-use crate::model::room::Wall;
 use crate::model::violation::Violation;
 
-const DOOR_CLEARANCE_MM: i32 = 900;
+const DEFAULT_DOOR_SWING_MM: i32 = 900;
+
+fn wall_axis_length(room: &crate::model::room::SizeMm, wall_id: &str) -> Option<i32> {
+    match wall_id {
+        "north" | "south" => Some(room.width),
+        "east" | "west" => Some(room.depth),
+        _ => None,
+    }
+}
+
+fn door_clearance_zone(
+    room: &crate::model::room::SizeMm,
+    wall_id: &str,
+    offset_mm: i32,
+    width_mm: i32,
+    swing_radius_mm: i32,
+) -> Option<Aabb> {
+    let depth = swing_radius_mm.max(0);
+    match wall_id {
+        "south" => Some(Aabb::from_min_max(
+            offset_mm,
+            0,
+            offset_mm + width_mm,
+            depth,
+        )),
+        "north" => Some(Aabb::from_min_max(
+            offset_mm,
+            room.depth - depth,
+            offset_mm + width_mm,
+            room.depth,
+        )),
+        "west" => Some(Aabb::from_min_max(
+            0,
+            offset_mm,
+            depth,
+            offset_mm + width_mm,
+        )),
+        "east" => Some(Aabb::from_min_max(
+            room.width - depth,
+            offset_mm,
+            room.width,
+            offset_mm + width_mm,
+        )),
+        _ => None,
+    }
+}
 
 pub fn check_openings(state: &KitchenState, footprints: &[Footprint], violations: &mut Vec<Violation>) {
     let room = &state.room.size_mm;
@@ -13,31 +57,24 @@ pub fn check_openings(state: &KitchenState, footprints: &[Footprint], violations
             continue;
         }
 
-        let zone = match opening.wall {
-            Wall::South => Aabb::from_min_max(
-                opening.offset_mm,
-                0,
-                opening.offset_mm + opening.width_mm,
-                DOOR_CLEARANCE_MM,
-            ),
-            Wall::North => Aabb::from_min_max(
-                opening.offset_mm,
-                room.depth - DOOR_CLEARANCE_MM,
-                opening.offset_mm + opening.width_mm,
-                room.depth,
-            ),
-            Wall::West => Aabb::from_min_max(
-                0,
-                opening.offset_mm,
-                DOOR_CLEARANCE_MM,
-                opening.offset_mm + opening.width_mm,
-            ),
-            Wall::East => Aabb::from_min_max(
-                room.width - DOOR_CLEARANCE_MM,
-                opening.offset_mm,
-                room.width,
-                opening.offset_mm + opening.width_mm,
-            ),
+        if wall_axis_length(room, &opening.wall_id).is_none() {
+            continue;
+        }
+
+        let swing_radius = opening
+            .swing
+            .as_ref()
+            .map(|s| s.radius_mm)
+            .unwrap_or(DEFAULT_DOOR_SWING_MM);
+
+        let Some(zone) = door_clearance_zone(
+            room,
+            &opening.wall_id,
+            opening.offset_mm,
+            opening.width_mm,
+            swing_radius,
+        ) else {
+            continue;
         };
 
         for fp in footprints {

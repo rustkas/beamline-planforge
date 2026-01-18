@@ -1,10 +1,12 @@
 pub mod clearances;
 pub mod collisions;
 pub mod openings;
+pub mod plumbing_power;
 
 use crate::geometry::aabb::Aabb;
 use crate::model::kitchen_state::KitchenState;
 use crate::model::layout::LayoutObject;
+use crate::model::room::Point2Mm;
 use crate::model::violation::Violation;
 
 #[derive(Debug, Clone)]
@@ -14,6 +16,8 @@ pub struct Footprint {
     pub width: i32,
     pub depth: i32,
     pub height: i32,
+    pub anchor: Point2Mm,
+    pub tags: Option<Vec<String>>,
 }
 
 pub fn build_footprints(objects: &[LayoutObject]) -> Vec<Footprint> {
@@ -30,6 +34,8 @@ pub fn build_footprints(objects: &[LayoutObject]) -> Vec<Footprint> {
                 width,
                 depth,
                 height: obj.dims_mm.height,
+                anchor: Point2Mm { x, y },
+                tags: obj.tags.clone(),
             }
         })
         .collect()
@@ -42,6 +48,7 @@ pub fn validate_constraints(state: &KitchenState) -> Vec<Violation> {
     collisions::check_collisions(&footprints, &mut violations);
     clearances::check_clearances(state, &footprints, &mut violations);
     openings::check_openings(state, &footprints, &mut violations);
+    crate::constraints::plumbing_power::check_plumbing_power(state, &footprints, &mut violations);
 
     violations
 }

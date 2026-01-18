@@ -4,10 +4,32 @@
   "title": "UtilityPoint",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "kind", "position_mm"],
+  "required": ["id", "kind", "zone_radius_mm"],
   "properties": {
     "id": { "type": "string", "minLength": 1 },
     "kind": { "enum": ["water", "drain", "power", "vent", "gas"] },
-    "position_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" }
-  }
+    "wall_id": { "type": "string", "minLength": 1 },
+    "offset_mm": { "type": "integer", "minimum": 0 },
+    "position_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" },
+    "zone_radius_mm": { "type": "integer", "minimum": 0 }
+  },
+  "anyOf": [
+    {
+      "properties": { "position_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" } },
+      "required": ["position_mm"]
+    },
+    {
+      "properties": { "wall_id": { "type": "string", "minLength": 1 } },
+      "required": ["wall_id"]
+    }
+  ],
+  "allOf": [
+    {
+      "if": { "required": ["wall_id"] },
+      "then": {
+        "properties": { "offset_mm": { "type": "integer", "minimum": 0 } },
+        "required": ["offset_mm"]
+      }
+    }
+  ]
 }

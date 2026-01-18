@@ -23,4 +23,29 @@ describe("fixtures validate against schemas", () => {
     expect(res.ok).toBe(true);
     expect(res.errors).toEqual([]);
   });
+
+  test("Room fixtures are valid", async () => {
+    const ajv = create_ajv();
+    const basic = await read_json("./fixtures/room_basic.fixture.json");
+    const detailed = await read_json("./fixtures/room_with_openings_utilities.fixture.json");
+
+    const res_basic = validate_with_ajv(ajv, "planforge://schemas/room.schema.json", basic);
+    const res_detailed = validate_with_ajv(ajv, "planforge://schemas/room.schema.json", detailed);
+
+    expect(res_basic.ok).toBe(true);
+    expect(res_basic.errors).toEqual([]);
+    expect(res_detailed.ok).toBe(true);
+    expect(res_detailed.errors).toEqual([]);
+  });
+
+  test("Proposal fixtures are valid", async () => {
+    const ajv = create_ajv();
+    const fixture = await read_json("./fixtures/proposals_3_variants.fixture.json");
+    expect(Array.isArray(fixture)).toBe(true);
+    for (const item of fixture as unknown[]) {
+      const res = validate_with_ajv(ajv, "planforge://schemas/proposal.schema.json", item);
+      expect(res.ok).toBe(true);
+      expect(res.errors).toEqual([]);
+    }
+  });
 });

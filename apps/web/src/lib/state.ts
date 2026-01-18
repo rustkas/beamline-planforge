@@ -35,6 +35,14 @@ export type AppState = {
   final_quote: quote | null;
   quote_diagnostics: quote_merge_diagnostic[];
   pricing_context: { channel?: string; region?: string };
+  session_messages: Array<{ role: "user" | "assistant" | "system"; content: string; ts: number }>;
+  session_proposals: Array<{
+    proposal_id: string;
+    variant_index: number;
+    rationale: Record<string, unknown>;
+    metrics?: Record<string, unknown>;
+    explanation_text?: string;
+  }>;
   project_id: string | null;
   revision_id: string | null;
   api_base_url: string;
@@ -56,6 +64,8 @@ const initial_state: AppState = {
   final_quote: null,
   quote_diagnostics: [],
   pricing_context: {},
+  session_messages: [],
+  session_proposals: [],
   project_id: null,
   revision_id: null,
   api_base_url: "http://localhost:3001",
@@ -444,6 +454,30 @@ async function ensure_session(project_id: string, revision_id: string): Promise<
   return created.data.session_id;
 }
 
+async function refresh_session_data(session_id: string): Promise<void> {
+  const snapshot = get_snapshot();
+  const api = create_api_core_client(snapshot.api_base_url);
+  const res = await api.get_session(session_id);
+  if (!res.ok) {
+    set_state({ error: res.error.message });
+    return;
+  }
+  set_state({
+    session_messages: res.data.messages.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+      ts: msg.ts
+    })),
+    session_proposals: res.data.proposals.map((proposal) => ({
+      proposal_id: proposal.proposal_id,
+      variant_index: proposal.variant_index,
+      rationale: proposal.rationale,
+      metrics: proposal.metrics,
+      explanation_text: proposal.explanation_text
+    }))
+  });
+}
+
 export async function init_demo(mode: Mode, api_base_url: string, orchestrator_base_url: string): Promise<void> {
   write_mode(mode);
   set_state({ mode, api_base_url, orchestrator_base_url, error: null });
@@ -487,6 +521,9 @@ export async function init_demo(mode: Mode, api_base_url: string, orchestrator_b
       session_id,
       base_violations
     });
+    if (session_id) {
+      await refresh_session_data(session_id);
+    }
     await recompute_server();
   } finally {
     set_state({ busy: false });
@@ -559,7 +596,71 @@ export async function run_agent_command(command: string): Promise<TurnResult | n
       return null;
     }
 
-    return await handle_turn_result(turn.data);
+    const result = await handle_turn_result(turn.data);
+    await refresh_session_data(session_id);
+    return result;
+  } finally {
+    set_state({ busy: false });
+  }
+}
+
+export async function generate_layout_proposals(): Promise<void> {
+  const snapshot = get_snapshot();
+  if (snapshot.mode !== "server") {
+    set_state({ error: "Proposals available only in server mode" });
+    return;
+  }
+  if (!snapshot.project_id || !snapshot.revision_id) {
+    set_state({ error: "Project not initialized" });
+    return;
+  }
+  const session_id = snapshot.session_id ?? read_session_id(snapshot.project_id);
+  if (!session_id) {
+    set_state({ error: "Session not initialized" });
+    return;
+  }
+
+  set_state({ busy: true, error: null });
+  try {
+    const orchestrator = create_ai_orchestrator_client(snapshot.orchestrator_base_url);
+    const result = await orchestrator.generate_proposals(session_id);
+    if (!result.ok) {
+      set_state({ error: result.error.message });
+      return;
+    }
+    await refresh_session_data(session_id);
+  } finally {
+    set_state({ busy: false });
+  }
+}
+
+export async function select_layout_proposal(proposal_id: string): Promise<void> {
+  const snapshot = get_snapshot();
+  if (snapshot.mode !== "server") {
+    set_state({ error: "Proposals available only in server mode" });
+    return;
+  }
+  if (!snapshot.project_id || !snapshot.revision_id || !snapshot.session_id) {
+    set_state({ error: "Session not initialized" });
+    return;
+  }
+
+  set_state({ busy: true, error: null });
+  try {
+    const api = create_api_core_client(snapshot.api_base_url);
+    const result = await api.select_proposal(snapshot.session_id, proposal_id);
+    if (!result.ok) {
+      set_state({ error: result.error.message });
+      return;
+    }
+    if (Array.isArray(result.data.violations) && result.data.violations.length > 0) {
+      set_state({ base_violations: result.data.violations as Violation[], violations: result.data.violations as Violation[] });
+      return;
+    }
+    set_state({ revision_id: result.data.new_revision_id });
+    write_demo_ids(snapshot.project_id, result.data.new_revision_id);
+    await refresh_revision();
+    await refresh_session_data(snapshot.session_id);
   } finally {
     set_state({ busy: false });
   }

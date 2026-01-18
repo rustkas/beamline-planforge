@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/aabb_mm.schema.json",
+  "title": "AabbMm",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["min_mm", "max_mm"],
+  "properties": {
+    "min_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" },
+    "max_mm": { "$ref": "planforge://schemas/point2_mm.schema.json" }
+  }
+}

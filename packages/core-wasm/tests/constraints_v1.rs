@@ -85,7 +85,16 @@ fn detects_min_passage() {
 fn detects_door_clearance() {
     let mut state = base_state();
     state["room"]["openings"] = serde_json::json!([
-        { "id": "door_1", "kind": "door", "wall": "south", "offset_mm": 0, "width_mm": 900, "height_mm": 2100 }
+        {
+            "id": "door_1",
+            "kind": "door",
+            "wall_id": "south",
+            "offset_mm": 0,
+            "width_mm": 900,
+            "height_mm": 2100,
+            "sill_height_mm": 0,
+            "swing": { "direction": "left", "radius_mm": 900 }
+        }
     ]);
     state["layout"]["objects"] = serde_json::json!([
         {
@@ -108,7 +117,11 @@ fn detects_door_clearance() {
 fn detects_restricted_zone() {
     let mut state = base_state();
     state["room"]["restricted_zones"] = serde_json::json!([
-        { "id": "zone_1", "min_mm": { "x": 0, "y": 0 }, "max_mm": { "x": 800, "y": 800 }, "reason": "pillar" }
+        {
+            "id": "zone_1",
+            "reason": "pillar",
+            "aabb_mm": { "min_mm": { "x": 0, "y": 0 }, "max_mm": { "x": 800, "y": 800 } }
+        }
     ]);
     state["layout"]["objects"] = serde_json::json!([
         {

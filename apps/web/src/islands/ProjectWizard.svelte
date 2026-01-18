@@ -2,9 +2,13 @@
   import { onMount } from "svelte";
   import { load_kitchen_state_fixture } from "../lib/fixtures";
   import { create_api_core_client } from "../lib/api_core_client";
+  import { create_ai_orchestrator_client } from "../lib/ai_orchestrator_client";
+  import LayoutStep from "../components/ProjectWizard/LayoutStep.svelte";
 
   const apiBaseUrl = import.meta.env.PUBLIC_API_BASE_URL ?? "http://localhost:3001";
   const api = create_api_core_client(apiBaseUrl);
+  const orchestratorBaseUrl = import.meta.env.PUBLIC_ORCHESTRATOR_BASE_URL ?? "http://localhost:3002";
+  const orchestrator = create_ai_orchestrator_client(orchestratorBaseUrl);
 
   const steps = ["room", "style", "layout", "materials", "quote", "checkout"] as const;
   type Step = (typeof steps)[number];
@@ -17,6 +21,30 @@
   let roomWidth = 3200;
   let roomDepth = 2600;
   let roomHeight = 2700;
+  const wallIds = ["north", "east", "south", "west"];
+  type OpeningForm = {
+    id: string;
+    kind: "door" | "window";
+    wall_id: string;
+    offset_mm: number;
+    width_mm: number;
+    height_mm: number;
+    sill_height_mm: number;
+    swing_direction: "left" | "right" | "both";
+    swing_radius_mm: number;
+  };
+  type UtilityForm = {
+    id: string;
+    kind: "water" | "drain" | "power" | "vent" | "gas";
+    placement: "wall" | "point";
+    wall_id: string;
+    offset_mm: number;
+    position_x: number;
+    position_y: number;
+    zone_radius_mm: number;
+  };
+  let openings: OpeningForm[] = [];
+  let utilities: UtilityForm[] = [];
   let style = "modern";
   let layout = "linear";
   let material = "oak";
@@ -25,6 +53,20 @@
   let revisionId: string | null = null;
   let quote: any = null;
   let orderId: string | null = null;
+  let sessionId: string | null = null;
+  let proposals: Array<{
+    proposal_id: string;
+    variant_index: number;
+    kind?: string;
+    metrics?: Record<string, unknown>;
+    explanation_text?: string;
+    violations_summary?: Array<{ code: string; severity: string; count: number; message?: string }>;
+  }> = [];
+  let proposalsGeneratedAt: string | null = null;
+  let layoutLoading = false;
+  let layoutError: string | null = null;
+  let appliedRevisionId: string | null = null;
+  let quoteDebounce: ReturnType<typeof setTimeout> | null = null;
 
   let customerName = "";
   let customerEmail = "";
@@ -41,6 +83,50 @@
     return steps[stepIndex] ?? "room";
   }
 
+  function openingValid(opening: OpeningForm): boolean {
+    if (!opening.id.trim()) return false;
+    if (!wallIds.includes(opening.wall_id)) return false;
+    const wallLength =
+      opening.wall_id === "north" || opening.wall_id === "south" ? roomWidth : roomDepth;
+    const swingDepth =
+      opening.wall_id === "north" || opening.wall_id === "south" ? roomDepth : roomWidth;
+    if (opening.offset_mm < 0 || opening.width_mm <= 0 || opening.height_mm <= 0) return false;
+    if (opening.width_mm > wallLength) return false;
+    if (opening.offset_mm + opening.width_mm > wallLength) return false;
+    if (opening.height_mm > roomHeight) return false;
+    if (opening.kind === "window") {
+      if (opening.sill_height_mm < 0) return false;
+      if (opening.sill_height_mm + opening.height_mm > roomHeight) return false;
+    }
+    if (opening.kind === "door") {
+      if (opening.swing_radius_mm < 0) return false;
+      if (opening.swing_radius_mm > swingDepth) return false;
+    }
+    return true;
+  }
+
+  function utilityValid(util: UtilityForm): boolean {
+    if (!util.id.trim()) return false;
+    if (util.zone_radius_mm < 0) return false;
+    if (util.placement === "wall") {
+      if (!wallIds.includes(util.wall_id)) return false;
+      if (util.offset_mm < 0) return false;
+      const wallLength = util.wall_id === "north" || util.wall_id === "south" ? roomWidth : roomDepth;
+      if (util.offset_mm > wallLength) return false;
+    } else {
+      if (util.position_x < 0 || util.position_y < 0) return false;
+      if (util.position_x > roomWidth || util.position_y > roomDepth) return false;
+    }
+    return true;
+  }
+
+  function roomStepValid(): boolean {
+    if (roomWidth <= 0 || roomDepth <= 0 || roomHeight <= 0) return false;
+    if (openings.some((o) => !openingValid(o))) return false;
+    if (utilities.some((u) => !utilityValid(u))) return false;
+    return true;
+  }
+
   function next(): void {
     if (stepIndex < steps.length - 1) stepIndex += 1;
   }
@@ -54,12 +140,179 @@
     kitchenState.room.size_mm.width = roomWidth;
     kitchenState.room.size_mm.depth = roomDepth;
     kitchenState.room.size_mm.height = roomHeight;
+    kitchenState.room.openings = openings.map((o) => ({
+      id: o.id,
+      kind: o.kind,
+      wall_id: o.wall_id,
+      offset_mm: o.offset_mm,
+      width_mm: o.width_mm,
+      height_mm: o.height_mm,
+      sill_height_mm: o.sill_height_mm,
+      ...(o.kind === "door"
+        ? {
+            swing: {
+              direction: o.swing_direction,
+              radius_mm: o.swing_radius_mm
+            }
+          }
+        : {})
+    }));
+    kitchenState.room.utilities = utilities.map((u) => ({
+      id: u.id,
+      kind: u.kind,
+      zone_radius_mm: u.zone_radius_mm,
+      ...(u.placement === "wall"
+        ? { wall_id: u.wall_id, offset_mm: u.offset_mm }
+        : { position_mm: { x: u.position_x, y: u.position_y } })
+    }));
     kitchenState.extensions = kitchenState.extensions ?? {};
     kitchenState.extensions.wizard = {
       style,
       layout,
       material
     };
+  }
+
+  async function ensureSession(): Promise<void> {
+    if (!projectId || !revisionId) return;
+    if (sessionId) return;
+    const created = await api.create_session(projectId, revisionId);
+    if (!created.ok) {
+      layoutError = created.error.message;
+      return;
+    }
+    sessionId = created.data.session_id;
+  }
+
+  async function generateLayoutProposals(): Promise<void> {
+    layoutError = null;
+    layoutLoading = true;
+    await ensureProject();
+    await ensureSession();
+    if (!sessionId) {
+      layoutLoading = false;
+      return;
+    }
+    const res = await orchestrator.generate_proposals(sessionId);
+    layoutLoading = false;
+    if (!res.ok) {
+      layoutError = res.error.message;
+      return;
+    }
+    proposals = res.data.proposals.map((p) => ({
+      proposal_id: p.proposal_id,
+      variant_index: p.variant_index,
+      kind: (p.rationale as any)?.layout_kind ?? undefined,
+      metrics: p.metrics,
+      explanation_text: p.explanation_text,
+      violations_summary: p.violations_summary
+    }));
+    proposalsGeneratedAt = new Date().toLocaleTimeString();
+  }
+
+  async function applyLayoutProposal(proposalId: string): Promise<void> {
+    layoutError = null;
+    layoutLoading = true;
+    if (!sessionId) {
+      layoutError = "Session not ready.";
+      layoutLoading = false;
+      return;
+    }
+    const res = await api.select_proposal(sessionId, proposalId);
+    layoutLoading = false;
+    if (!res.ok) {
+      layoutError = res.error.message;
+      return;
+    }
+    appliedRevisionId = res.data.new_revision_id;
+    revisionId = res.data.new_revision_id;
+    if (projectId && revisionId) {
+      void api.render(projectId, revisionId, "draft");
+      scheduleQuoteRefresh();
+    }
+  }
+
+  function scheduleQuoteRefresh(): void {
+    if (!projectId || !revisionId) return;
+    if (quoteDebounce) {
+      clearTimeout(quoteDebounce);
+    }
+    quoteDebounce = setTimeout(async () => {
+      await fetchQuote();
+    }, 400);
+  }
+
+  function addOpening(kind: "door" | "window"): void {
+    const baseId = `${kind}_${openings.length + 1}`;
+    openings = [
+      ...openings,
+      {
+        id: baseId,
+        kind,
+        wall_id: "south",
+        offset_mm: 0,
+        width_mm: kind === "door" ? 900 : 1200,
+        height_mm: kind === "door" ? 2100 : 1200,
+        sill_height_mm: kind === "door" ? 0 : 900,
+        swing_direction: "left",
+        swing_radius_mm: 900
+      }
+    ];
+  }
+
+  function removeOpening(id: string): void {
+    openings = openings.filter((o) => o.id !== id);
+  }
+
+  function addUtility(kind: UtilityForm["kind"]): void {
+    const baseId = `${kind}_${utilities.length + 1}`;
+    utilities = [
+      ...utilities,
+      {
+        id: baseId,
+        kind,
+        placement: "wall",
+        wall_id: "south",
+        offset_mm: 0,
+        position_x: 0,
+        position_y: 0,
+        zone_radius_mm: 200
+      }
+    ];
+  }
+
+  function removeUtility(id: string): void {
+    utilities = utilities.filter((u) => u.id !== id);
+  }
+
+  function applyTemplate(template: "studio" | "onebr" | "lshape"): void {
+    if (template === "studio") {
+      roomWidth = 2600;
+      roomDepth = 2200;
+      roomHeight = 2600;
+    } else if (template === "onebr") {
+      roomWidth = 3200;
+      roomDepth = 2600;
+      roomHeight = 2700;
+    } else {
+      roomWidth = 3600;
+      roomDepth = 2800;
+      roomHeight = 2700;
+    }
+  }
+
+  function planScale(): number {
+    const maxSide = Math.max(roomWidth, roomDepth, 1);
+    return 260 / maxSide;
+  }
+
+  function wallPoint(wallId: string, offset: number): { x: number; y: number } {
+    const scale = planScale();
+    if (wallId === "north") return { x: offset * scale, y: 0 };
+    if (wallId === "south") return { x: offset * scale, y: roomDepth * scale };
+    if (wallId === "west") return { x: 0, y: offset * scale };
+    if (wallId === "east") return { x: roomWidth * scale, y: offset * scale };
+    return { x: 0, y: 0 };
   }
 
   async function ensureProject(): Promise<void> {
@@ -120,6 +373,27 @@
     roomWidth = kitchenState.room.size_mm.width;
     roomDepth = kitchenState.room.size_mm.depth;
     roomHeight = kitchenState.room.size_mm.height;
+    openings = (kitchenState.room.openings ?? []).map((o: any) => ({
+      id: o.id ?? `opening_${Math.random().toString(36).slice(2, 6)}`,
+      kind: o.kind ?? "door",
+      wall_id: o.wall_id ?? "south",
+      offset_mm: o.offset_mm ?? 0,
+      width_mm: o.width_mm ?? 900,
+      height_mm: o.height_mm ?? 2100,
+      sill_height_mm: o.sill_height_mm ?? 0,
+      swing_direction: o.swing?.direction ?? "left",
+      swing_radius_mm: o.swing?.radius_mm ?? 900
+    }));
+    utilities = (kitchenState.room.utilities ?? []).map((u: any) => ({
+      id: u.id ?? `util_${Math.random().toString(36).slice(2, 6)}`,
+      kind: u.kind ?? "water",
+      placement: u.wall_id ? "wall" : "point",
+      wall_id: u.wall_id ?? "south",
+      offset_mm: u.offset_mm ?? 0,
+      position_x: u.position_mm?.x ?? 0,
+      position_y: u.position_mm?.y ?? 0,
+      zone_radius_mm: u.zone_radius_mm ?? 200
+    }));
   });
 </script>
 
@@ -148,9 +422,164 @@
   {#if currentStep() === "room"}
     <div class="panel">
       <h2>Room</h2>
+      <div class="templates">
+        <button type="button" on:click={() => applyTemplate("studio")}>Studio</button>
+        <button type="button" on:click={() => applyTemplate("onebr")}>1BR</button>
+        <button type="button" on:click={() => applyTemplate("lshape")}>L-shape zone</button>
+      </div>
       <label>Width (mm)<input type="number" bind:value={roomWidth} /></label>
       <label>Depth (mm)<input type="number" bind:value={roomDepth} /></label>
       <label>Height (mm)<input type="number" bind:value={roomHeight} /></label>
+      {#if !roomStepValid()}
+        <p class="error">Fill valid room dimensions, openings, and utilities before continuing.</p>
+      {/if}
+      <div class="subpanel">
+        <h3>2D Plan</h3>
+        <svg class="plan" viewBox={`0 0 ${roomWidth * planScale()} ${roomDepth * planScale()}`}>
+          <rect
+            x="0"
+            y="0"
+            width={roomWidth * planScale()}
+            height={roomDepth * planScale()}
+            rx="6"
+          />
+          {#each openings as opening}
+            {#if opening.wall_id === "north" || opening.wall_id === "south"}
+              <rect
+                class:door={opening.kind === "door"}
+                x={wallPoint(opening.wall_id, opening.offset_mm).x}
+                y={opening.wall_id === "north" ? 0 : roomDepth * planScale() - 6}
+                width={opening.width_mm * planScale()}
+                height="6"
+              />
+            {:else}
+              <rect
+                class:door={opening.kind === "door"}
+                x={opening.wall_id === "west" ? 0 : roomWidth * planScale() - 6}
+                y={wallPoint(opening.wall_id, opening.offset_mm).y}
+                width="6"
+                height={opening.width_mm * planScale()}
+              />
+            {/if}
+          {/each}
+          {#each utilities as util}
+            {#if util.placement === "wall"}
+              {#key util.id}
+                <circle
+                  class="util"
+                  cx={wallPoint(util.wall_id, util.offset_mm).x}
+                  cy={wallPoint(util.wall_id, util.offset_mm).y}
+                  r="4"
+                />
+              {/key}
+            {:else}
+              <circle
+                class="util"
+                cx={util.position_x * planScale()}
+                cy={util.position_y * planScale()}
+                r="4"
+              />
+            {/if}
+          {/each}
+        </svg>
+        <p class="meta">Simple wall-aligned preview (not to scale for doors swing).</p>
+      </div>
+      <div class="subpanel">
+        <h3>Openings</h3>
+        <div class="row">
+          <button type="button" on:click={() => addOpening("door")}>Add door</button>
+          <button type="button" on:click={() => addOpening("window")}>Add window</button>
+        </div>
+        {#if openings.length === 0}
+          <p class="meta">No openings yet.</p>
+        {:else}
+          {#each openings as opening}
+            <div class="card">
+              <div class="row">
+                <strong>{opening.id}</strong>
+                <button type="button" on:click={() => removeOpening(opening.id)}>Remove</button>
+              </div>
+              <label>Type
+                <select bind:value={opening.kind}>
+                  <option value="door">Door</option>
+                  <option value="window">Window</option>
+                </select>
+              </label>
+              <label>Wall
+                <select bind:value={opening.wall_id}>
+                  {#each wallIds as wall}
+                    <option value={wall}>{wall}</option>
+                  {/each}
+                </select>
+              </label>
+              <label>Offset (mm)<input type="number" bind:value={opening.offset_mm} /></label>
+              <label>Width (mm)<input type="number" bind:value={opening.width_mm} /></label>
+              <label>Height (mm)<input type="number" bind:value={opening.height_mm} /></label>
+              <label>Sill height (mm)<input type="number" bind:value={opening.sill_height_mm} /></label>
+              {#if opening.kind === "door"}
+                <label>Swing direction
+                  <select bind:value={opening.swing_direction}>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                    <option value="both">Both</option>
+                  </select>
+                </label>
+                <label>Swing radius (mm)<input type="number" bind:value={opening.swing_radius_mm} /></label>
+              {/if}
+            </div>
+          {/each}
+        {/if}
+      </div>
+      <div class="subpanel">
+        <h3>Utilities</h3>
+        <div class="row">
+          <button type="button" on:click={() => addUtility("water")}>Add water</button>
+          <button type="button" on:click={() => addUtility("drain")}>Add drain</button>
+          <button type="button" on:click={() => addUtility("power")}>Add power</button>
+          <button type="button" on:click={() => addUtility("vent")}>Add vent</button>
+        </div>
+        {#if utilities.length === 0}
+          <p class="meta">No utilities yet.</p>
+        {:else}
+          {#each utilities as util}
+            <div class="card">
+              <div class="row">
+                <strong>{util.id}</strong>
+                <button type="button" on:click={() => removeUtility(util.id)}>Remove</button>
+              </div>
+              <label>Kind
+                <select bind:value={util.kind}>
+                  <option value="water">Water</option>
+                  <option value="drain">Drain</option>
+                  <option value="power">Power</option>
+                  <option value="vent">Vent</option>
+                  <option value="gas">Gas</option>
+                </select>
+              </label>
+              <label>Placement
+                <select bind:value={util.placement}>
+                  <option value="wall">Wall</option>
+                  <option value="point">Point</option>
+                </select>
+              </label>
+              {#if util.placement === "wall"}
+                <label>Wall
+                  <select bind:value={util.wall_id}>
+                    {#each wallIds as wall}
+                      <option value={wall}>{wall}</option>
+                    {/each}
+                  </select>
+                </label>
+                <label>Offset (mm)<input type="number" bind:value={util.offset_mm} /></label>
+              {:else}
+                <label>X (mm)<input type="number" bind:value={util.position_x} /></label>
+                <label>Y (mm)<input type="number" bind:value={util.position_y} /></label>
+              {/if}
+              <label>Zone radius (mm)<input type="number" bind:value={util.zone_radius_mm} /></label>
+            </div>
+          {/each}
+        {/if}
+      </div>
     </div>
   {:else if currentStep() === "style"}
     <div class="panel">
@@ -163,13 +592,20 @@
     </div>
   {:else if currentStep() === "layout"}
     <div class="panel">
-      <h2>Layout</h2>
-      <select bind:value={layout}>
-        <option value="linear">Linear</option>
-        <option value="l-shape">L-shape</option>
-        <option value="u-shape">U-shape</option>
-        <option value="island">Island</option>
-      </select>
+      <LayoutStep
+        proposals={proposals}
+        loading={layoutLoading}
+        error={layoutError}
+        generatedAt={proposalsGeneratedAt}
+        appliedRevisionId={appliedRevisionId}
+        onGenerate={generateLayoutProposals}
+        onApply={applyLayoutProposal}
+      />
+      {#if quote}
+        <div class="quote">
+          <p><strong>Current quote:</strong> {quote.total.amount} {quote.total.currency}</p>
+        </div>
+      {/if}
     </div>
   {:else if currentStep() === "materials"}
     <div class="panel">
@@ -227,7 +663,18 @@
 
   <footer class="actions">
     <button on:click={back} disabled={stepIndex === 0 || loading}>Back</button>
-    <button on:click={() => { updateState(); next(); }} disabled={stepIndex >= steps.length - 1 || loading}>
+    <button
+      on:click={() => {
+        updateState();
+        next();
+      }}
+      disabled={
+        (currentStep() === "room" && !roomStepValid()) ||
+        (currentStep() === "layout" && !appliedRevisionId) ||
+        stepIndex >= steps.length - 1 ||
+        loading
+      }
+    >
       Next
     </button>
   </footer>
@@ -269,6 +716,52 @@
     border-radius: 0.75rem;
     border: 1px solid #f1f5f9;
     background: #fff;
+  }
+  .subpanel {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px dashed #e5e7eb;
+    background: #fffaf2;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .card {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.6rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.5rem;
+    background: #ffffff;
+  }
+  .templates {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  .plan {
+    width: 100%;
+    max-width: 320px;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    background: #fffdf7;
+  }
+  .plan rect {
+    fill: none;
+    stroke: #111827;
+    stroke-width: 2;
+  }
+  .plan rect.door {
+    fill: #fbbf24;
+    stroke: #b45309;
+  }
+  .plan .util {
+    fill: #1d4ed8;
   }
   label {
     display: grid;

@@ -5,6 +5,8 @@
     init_demo,
     move_first_object_x,
     recompute,
+    generate_layout_proposals,
+    select_layout_proposal,
     reset_demo,
     set_pricing_channel,
     set_render_quality
@@ -226,6 +228,46 @@
       </details>
     {:else}
       <p class="meta">No quote yet.</p>
+    {/if}
+  </div>
+
+  <div class="variants">
+    <h3>Layout Variants</h3>
+    {#if $app_state.mode !== "server"}
+      <p class="meta">Variants are available in server mode.</p>
+    {:else}
+      <div class="row">
+        <button type="button" on:click={generate_layout_proposals} disabled={$app_state.busy}>
+          Generate variants
+        </button>
+      </div>
+      {#if $app_state.session_proposals.length === 0}
+        <p class="meta">No proposals yet.</p>
+      {:else}
+        <ul>
+          {#each $app_state.session_proposals as proposal}
+            <li>
+              <div class="variant-header">
+                <strong>Variant {proposal.variant_index + 1}</strong>
+                <button
+                  type="button"
+                  on:click={() => select_layout_proposal(proposal.proposal_id)}
+                  disabled={$app_state.busy}
+                >
+                  Apply
+                </button>
+              </div>
+              {#if proposal.explanation_text}
+                <p class="meta">{proposal.explanation_text}</p>
+              {/if}
+              <details>
+                <summary>Details</summary>
+                <pre>{JSON.stringify({ rationale: proposal.rationale, metrics: proposal.metrics }, null, 2)}</pre>
+              </details>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </div>
 

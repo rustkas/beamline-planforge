@@ -249,6 +249,35 @@ export async function create_app(): Promise<Hono> {
     return c.json({ new_revision_id: new_revision.revision_id, violations: [] });
   });
 
+  app.post("/projects/:project_id/revisions/:revision_id/preview", async (c) => {
+    const { project_id, revision_id } = c.req.param();
+    const revision = await store.get_revision(project_id, revision_id);
+    if (!revision) {
+      return c.json(error_response("revision.not_found", "Revision not found"), 404);
+    }
+
+    let patch: proposed_patch;
+    try {
+      patch = (await c.req.json()) as proposed_patch;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid patch JSON"), 400);
+    }
+
+    const patched = await apply_patch(revision.kitchen_state, patch);
+    const patch_violations = extract_violations(patched as unknown);
+    if (patch_violations.length > 0) {
+      return c.json({ kitchen_state: null, violations: patch_violations }, 422);
+    }
+
+    const schema = validate_kitchen_state(patched);
+    if (!schema.ok) {
+      return c.json(error_response("schema.invalid", "KitchenState schema invalid", { errors: schema.errors }), 400);
+    }
+
+    const validation = (await validate_layout(patched)) as { violations: violation[] };
+    return c.json({ kitchen_state: patched, violations: validation.violations ?? [] });
+  });
+
   app.post("/projects/:project_id/revisions/:revision_id/render", async (c) => {
     const { project_id, revision_id } = c.req.param();
     const revision = await store.get_revision(project_id, revision_id);
@@ -581,6 +610,165 @@ export async function create_app(): Promise<Hono> {
         "cache-control": "public, max-age=31536000, immutable"
       }
     });
+  });
+
+  app.post("/sessions", async (c) => {
+    let body: { project_id?: string; revision_id?: string };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+
+    if (!body?.project_id || !body?.revision_id) {
+      return c.json(error_response("session.invalid_request", "project_id and revision_id are required"), 400);
+    }
+
+    const session = await store.create_session(body.project_id, body.revision_id);
+    if (!session) {
+      return c.json(error_response("session.create_failed", "Unable to create session"), 404);
+    }
+    return c.json(session);
+  });
+
+  app.get("/sessions/:session_id", async (c) => {
+    const session_id = c.req.param("session_id");
+    const session = await store.get_session(session_id);
+    if (!session) {
+      return c.json(error_response("session.not_found", "Session not found"), 404);
+    }
+    const messages = await store.list_messages(session_id);
+    const proposals = await store.list_proposals(session_id);
+    return c.json({ session, messages, proposals });
+  });
+
+  app.post("/sessions/:session_id/messages", async (c) => {
+    const session_id = c.req.param("session_id");
+    let body: { role?: "user" | "assistant" | "system"; content?: string; ts?: number };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+    if (!body?.role || !body?.content) {
+      return c.json(error_response("message.invalid_request", "role and content are required"), 400);
+    }
+    const message = await store.add_message(session_id, {
+      session_id,
+      role: body.role,
+      content: body.content,
+      ts: body.ts ?? Date.now()
+    });
+    if (!message) {
+      return c.json(error_response("session.not_found", "Session not found"), 404);
+    }
+    return c.json(message);
+  });
+
+  app.post("/sessions/:session_id/proposals", async (c) => {
+    const session_id = c.req.param("session_id");
+    let body: {
+      revision_id?: string;
+      proposals?: Array<{
+        variant_index: number;
+        patch: Record<string, unknown>;
+        rationale: Record<string, unknown>;
+        metrics?: Record<string, unknown>;
+        explanation_text?: string;
+      }>;
+    };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+    if (!body?.revision_id || !Array.isArray(body?.proposals)) {
+      return c.json(error_response("proposal.invalid_request", "revision_id and proposals are required"), 400);
+    }
+    const stored = await store.add_proposals(session_id, body.revision_id, body.proposals);
+    if (!stored) {
+      return c.json(error_response("session.not_found", "Session not found"), 404);
+    }
+    return c.json({ proposals: stored });
+  });
+
+  app.post("/sessions/:session_id/select", async (c) => {
+    const session_id = c.req.param("session_id");
+    let body: { proposal_id?: string };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+    if (!body?.proposal_id) {
+      return c.json(error_response("proposal.invalid_request", "proposal_id is required"), 400);
+    }
+
+    const proposals = await store.list_proposals(session_id);
+    const proposal = proposals.find((p) => p.proposal_id === body.proposal_id);
+    if (!proposal) {
+      return c.json(error_response("proposal.not_found", "Proposal not found"), 404);
+    }
+
+    const session = await store.get_session(session_id);
+    if (!session) {
+      return c.json(error_response("session.not_found", "Session not found"), 404);
+    }
+
+    const revision = await store.get_revision(session.project_id, proposal.revision_id);
+    if (!revision) {
+      return c.json(error_response("revision.not_found", "Revision not found"), 404);
+    }
+
+    const patched = await apply_patch(revision.kitchen_state, proposal.patch);
+    const patch_violations = extract_violations(patched as unknown);
+    if (patch_violations.length > 0) {
+      return c.json({ violations: patch_violations }, 422);
+    }
+
+    const schema = validate_kitchen_state(patched);
+    if (!schema.ok) {
+      return c.json(error_response("schema.invalid", "KitchenState schema invalid", { errors: schema.errors }), 400);
+    }
+
+    const validation = (await validate_layout(patched)) as { violations: violation[] };
+    if (has_error_violations(validation.violations)) {
+      return c.json({ violations: validation.violations }, 422);
+    }
+
+    const new_revision = await store.create_revision(session.project_id, patched, revision.revision_id, {
+      source: "agent",
+      reason: "selected_proposal"
+    });
+    if (!new_revision) {
+      return c.json(error_response("revision.create_failed", "Failed to create revision"), 500);
+    }
+
+    await store.update_session_revision(session_id, new_revision.revision_id);
+    return c.json({
+      new_revision_id: new_revision.revision_id,
+      violations: validation.violations ?? [],
+      proposal_id: proposal.proposal_id
+    });
+  });
+
+  app.post("/sessions/:session_id/advance", async (c) => {
+    const session_id = c.req.param("session_id");
+    let body: { revision_id?: string };
+    try {
+      body = (await c.req.json()) as typeof body;
+    } catch {
+      return c.json(error_response("json.invalid", "Invalid JSON body"), 400);
+    }
+    if (!body?.revision_id) {
+      return c.json(error_response("session.invalid_request", "revision_id is required"), 400);
+    }
+    const session = await store.get_session(session_id);
+    if (!session) {
+      return c.json(error_response("session.not_found", "Session not found"), 404);
+    }
+    await store.update_session_revision(session_id, body.revision_id);
+    return c.json({ session_id, revision_id: body.revision_id });
   });
 
   app.post("/projects/:project_id/revisions/:revision_id/orders", async (c) => {

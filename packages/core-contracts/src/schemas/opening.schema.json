@@ -4,15 +4,24 @@
   "title": "Opening",
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "kind", "wall", "offset_mm", "width_mm", "height_mm"],
+  "required": ["id", "kind", "wall_id", "offset_mm", "width_mm", "height_mm"],
   "properties": {
     "id": { "type": "string", "minLength": 1 },
     "kind": { "enum": ["door", "window"] },
-    "wall": { "enum": ["north", "east", "south", "west"] },
+    "wall_id": { "type": "string", "minLength": 1 },
     "offset_mm": { "type": "integer", "minimum": 0 },
     "width_mm": { "type": "integer", "minimum": 1 },
     "height_mm": { "type": "integer", "minimum": 1 },
-    "sill_height_mm": { "type": "integer", "minimum": 0 }
+    "sill_height_mm": { "type": "integer", "minimum": 0 },
+    "swing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direction", "radius_mm"],
+      "properties": {
+        "direction": { "enum": ["left", "right", "both"] },
+        "radius_mm": { "type": "integer", "minimum": 0 }
+      }
+    }
   },
   "allOf": [
     {
@@ -22,6 +31,15 @@
           "sill_height_mm": { "type": "integer", "minimum": 0 }
         },
         "required": ["sill_height_mm"]
+      }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "door" } }, "required": ["kind"] },
+      "then": {
+        "properties": {
+          "swing": { "type": "object" }
+        },
+        "required": ["swing"]
       }
     }
   ]

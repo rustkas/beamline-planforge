@@ -29,6 +29,55 @@ export function create_api_client(base_url: string) {
   }
 
   return {
+    create_session: (project_id: string, revision_id: string) =>
+      request<{ session_id: string; project_id: string; revision_id: string }>("/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project_id, revision_id })
+      }),
+    get_session: (session_id: string) =>
+      request<{
+        session: { session_id: string; project_id: string; last_revision_id: string };
+        messages: Array<{ message_id: string; role: string; content: string; ts: number }>;
+        proposals: Array<{ proposal_id: string; variant_index: number }>;
+      }>(`/sessions/${session_id}`),
+    add_message: (session_id: string, role: "user" | "assistant" | "system", content: string) =>
+      request<{ message_id: string }>(`/sessions/${session_id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role, content, ts: Date.now() })
+      }),
+    add_proposals: (
+      session_id: string,
+      revision_id: string,
+      proposals: Array<{
+        variant_index: number;
+        patch: Record<string, unknown>;
+        rationale: Record<string, unknown>;
+        metrics?: Record<string, unknown>;
+        explanation_text?: string;
+      }>
+    ) =>
+      request<{ proposals: Array<{ proposal_id: string }> }>(`/sessions/${session_id}/proposals`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ revision_id, proposals })
+      }),
+    preview_patch: (project_id: string, revision_id: string, patch: unknown) =>
+      request<{ kitchen_state: unknown; violations: unknown[] }>(
+        `/projects/${project_id}/revisions/${revision_id}/preview`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(patch)
+        }
+      ),
+    advance_session: (session_id: string, revision_id: string) =>
+      request<{ session_id: string; revision_id: string }>(`/sessions/${session_id}/advance`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ revision_id })
+      }),
     create_project: (kitchen_state: unknown) =>
       request<{ project_id: string; revision_id: string; violations: unknown[] }>("/projects", {
         method: "POST",

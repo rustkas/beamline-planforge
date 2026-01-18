@@ -6,7 +6,9 @@ import { get_all_schemas } from "./load_schemas";
 export type schema_id =
   | "planforge://schemas/plugin-manifest.schema.json"
   | "planforge://schemas/kitchen_state.schema.json"
-  | "planforge://schemas/render_model.schema.json";
+  | "planforge://schemas/render_model.schema.json"
+  | "planforge://schemas/room.schema.json"
+  | "planforge://schemas/proposal.schema.json";
 
 export interface validation_result {
   ok: boolean;

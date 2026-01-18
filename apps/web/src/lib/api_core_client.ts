@@ -65,6 +65,20 @@ type ExportResponse = {
   artifacts: ExportArtifact[];
 };
 
+type SessionResponse = {
+  session: { session_id: string; project_id: string; last_revision_id: string };
+  messages: Array<{ message_id: string; role: "user" | "assistant" | "system"; content: string; ts: number }>;
+  proposals: Array<{
+    proposal_id: string;
+    revision_id: string;
+    variant_index: number;
+    rationale: Record<string, unknown>;
+    metrics?: Record<string, unknown>;
+    explanation_text?: string;
+    violations_summary?: Array<{ code: string; severity: string; count: number; message?: string }>;
+  }>;
+};
+
 function make_error(status: number, message: string, body?: unknown): ApiError {
   return { code: `http.${status}`, message, status, body };
 }
@@ -128,6 +142,35 @@ export function create_api_core_client(base_url: string) {
         body: JSON.stringify(payload)
       }),
     get_order: (order_id: string) => request<unknown>(`/orders/${order_id}`),
+    create_session: (project_id: string, revision_id: string) =>
+      request<{ session_id: string; project_id: string; last_revision_id: string }>("/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ project_id, revision_id })
+      }),
+    get_session: (session_id: string) => request<SessionResponse>(`/sessions/${session_id}`),
+    create_proposals: (
+      session_id: string,
+      revision_id: string,
+      proposals: Array<{
+        variant_index: number;
+        patch: Record<string, unknown>;
+        rationale: Record<string, unknown>;
+        metrics?: Record<string, unknown>;
+        explanation_text?: string;
+      }>
+    ) =>
+      request<{ proposals: Array<{ proposal_id: string }> }>(`/sessions/${session_id}/proposals`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ revision_id, proposals })
+      }),
+    select_proposal: (session_id: string, proposal_id: string) =>
+      request<{ new_revision_id: string; violations: unknown[] }>(`/sessions/${session_id}/select`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ proposal_id })
+      }),
     create_exports: (project_id: string, revision_id: string, format: "json" | "pdf" = "json") =>
       request<ExportResponse>("/exports", {
         method: "POST",

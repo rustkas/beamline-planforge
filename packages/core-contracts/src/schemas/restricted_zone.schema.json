@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/restricted_zone.schema.json",
+  "title": "RestrictedZone",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "reason"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "reason": { "type": "string", "minLength": 1 },
+    "aabb_mm": { "$ref": "planforge://schemas/aabb_mm.schema.json" },
+    "polygon_mm": { "$ref": "planforge://schemas/polygon_mm.schema.json" }
+  },
+  "oneOf": [
+    {
+      "properties": { "aabb_mm": { "$ref": "planforge://schemas/aabb_mm.schema.json" } },
+      "required": ["aabb_mm"]
+    },
+    {
+      "properties": { "polygon_mm": { "$ref": "planforge://schemas/polygon_mm.schema.json" } },
+      "required": ["polygon_mm"]
+    }
+  ]
+}

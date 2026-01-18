@@ -31,7 +31,33 @@ pub fn check_clearances(state: &KitchenState, footprints: &[Footprint], violatio
     }
 
     for zone in &state.room.restricted_zones {
-        let zone_aabb = Aabb::from_min_max(zone.min_mm.x, zone.min_mm.y, zone.max_mm.x, zone.max_mm.y);
+        let zone_aabb = if let Some(aabb) = &zone.aabb_mm {
+            Some(Aabb::from_min_max(
+                aabb.min_mm.x,
+                aabb.min_mm.y,
+                aabb.max_mm.x,
+                aabb.max_mm.y,
+            ))
+        } else if let Some(poly) = &zone.polygon_mm {
+            let (mut min_x, mut min_y, mut max_x, mut max_y) = (i32::MAX, i32::MAX, i32::MIN, i32::MIN);
+            for p in poly {
+                min_x = min_x.min(p.x);
+                min_y = min_y.min(p.y);
+                max_x = max_x.max(p.x);
+                max_y = max_y.max(p.y);
+            }
+            if min_x <= max_x && min_y <= max_y {
+                Some(Aabb::from_min_max(min_x, min_y, max_x, max_y))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let Some(zone_aabb) = zone_aabb else {
+            continue;
+        };
         for fp in footprints {
             if fp.aabb.intersects(&zone_aabb) {
                 violations.push(Violation::error(

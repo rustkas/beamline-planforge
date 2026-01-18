@@ -1,0 +1,8 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/polygon_mm.schema.json",
+  "title": "PolygonMm",
+  "type": "array",
+  "minItems": 3,
+  "items": { "$ref": "planforge://schemas/point2_mm.schema.json" }
+}

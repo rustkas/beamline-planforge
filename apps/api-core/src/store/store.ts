@@ -90,12 +90,42 @@ export type Order = {
   };
 };
 
+export type Session = {
+  session_id: string;
+  project_id: string;
+  created_at: string;
+  last_revision_id: string;
+};
+
+export type SessionMessage = {
+  message_id: string;
+  session_id: string;
+  role: "user" | "assistant" | "system";
+  content: string;
+  ts: number;
+};
+
+export type SessionProposal = {
+  proposal_id: string;
+  session_id: string;
+  revision_id: string;
+  variant_index: number;
+  patch: Record<string, unknown>;
+  rationale: Record<string, unknown>;
+  metrics?: Record<string, unknown>;
+  explanation_text?: string;
+  created_at: string;
+};
+
 export class InMemoryStore {
   private projects = new Map<string, Project>();
   private revisions = new Map<string, Revision[]>();
   private quotes = new Map<string, Quote[]>();
   private orders = new Map<string, Order[]>();
   private order_idempotency = new Map<string, Order>();
+  private sessions = new Map<string, Session>();
+  private session_messages = new Map<string, SessionMessage[]>();
+  private session_proposals = new Map<string, SessionProposal[]>();
   private persist_path: string | null;
 
   constructor(persist_path: string | null) {
@@ -280,6 +310,82 @@ export class InMemoryStore {
     return null;
   }
 
+  async create_session(project_id: string, revision_id: string): Promise<Session> {
+    const session_id = `sess_${crypto.randomUUID().replace(/-/g, "")}`;
+    const created_at = new Date().toISOString();
+    const session: Session = {
+      session_id,
+      project_id,
+      created_at,
+      last_revision_id: revision_id
+    };
+    this.sessions.set(session_id, session);
+    this.session_messages.set(session_id, []);
+    this.session_proposals.set(session_id, []);
+    return session;
+  }
+
+  async get_session(session_id: string): Promise<Session | null> {
+    return this.sessions.get(session_id) ?? null;
+  }
+
+  async update_session_revision(session_id: string, revision_id: string): Promise<void> {
+    const session = this.sessions.get(session_id);
+    if (!session) return;
+    session.last_revision_id = revision_id;
+    this.sessions.set(session_id, session);
+  }
+
+  async add_message(session_id: string, message: Omit<SessionMessage, "message_id">): Promise<SessionMessage | null> {
+    const session = this.sessions.get(session_id);
+    if (!session) return null;
+    const message_id = `msg_${crypto.randomUUID().replace(/-/g, "")}`;
+    const record: SessionMessage = { message_id, ...message };
+    const list = this.session_messages.get(session_id) ?? [];
+    list.push(record);
+    this.session_messages.set(session_id, list);
+    return record;
+  }
+
+  async list_messages(session_id: string): Promise<SessionMessage[]> {
+    return this.session_messages.get(session_id) ?? [];
+  }
+
+  async add_proposals(
+    session_id: string,
+    revision_id: string,
+    proposals: Array<{
+      variant_index: number;
+      patch: Record<string, unknown>;
+      rationale: Record<string, unknown>;
+      metrics?: Record<string, unknown>;
+      explanation_text?: string;
+    }>
+  ): Promise<SessionProposal[] | null> {
+    const session = this.sessions.get(session_id);
+    if (!session) return null;
+    const created_at = new Date().toISOString();
+    const stored = proposals.map((proposal) => ({
+      proposal_id: `prop_${crypto.randomUUID().replace(/-/g, "")}`,
+      session_id,
+      revision_id,
+      variant_index: proposal.variant_index,
+      patch: proposal.patch,
+      rationale: proposal.rationale,
+      metrics: proposal.metrics,
+      explanation_text: proposal.explanation_text,
+      created_at
+    }));
+    const list = this.session_proposals.get(session_id) ?? [];
+    list.push(...stored);
+    this.session_proposals.set(session_id, list);
+    return stored;
+  }
+
+  async list_proposals(session_id: string): Promise<SessionProposal[]> {
+    return this.session_proposals.get(session_id) ?? [];
+  }
+
   private async persist(project_id: string): Promise<void> {
     if (!this.persist_path) return;
     const project = this.projects.get(project_id);
@@ -314,6 +420,13 @@ export type Store = Pick<
   | "create_order"
   | "get_order"
   | "find_order"
+  | "create_session"
+  | "get_session"
+  | "update_session_revision"
+  | "add_message"
+  | "list_messages"
+  | "add_proposals"
+  | "list_proposals"
 >;
 
 export async function create_store(): Promise<Store> {

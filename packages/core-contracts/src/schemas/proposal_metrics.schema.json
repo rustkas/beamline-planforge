@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "planforge://schemas/proposal_metrics.schema.json",
+  "title": "ProposalMetrics",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "triangle_proxy_mm", "min_passage_mm", "door_clearance_ok", "utility_fit_score"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "triangle_proxy_mm": { "type": "integer", "minimum": 0 },
+    "triangle_edges_mm": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "integer", "minimum": 0 }
+    },
+    "min_passage_mm": { "type": "integer", "minimum": 0 },
+    "door_clearance_ok": { "type": "boolean" },
+    "utility_fit_score": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

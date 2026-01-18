@@ -2,8 +2,6 @@ import { create_ajv, validate_with_ajv } from "@planforge/core-contracts";
 import type { violation } from "@planforge/plugin-sdk";
 import type { proposed_patch } from "@planforge/plugin-sdk";
 import type { ApiResult } from "../api_core_client";
-import type { Session } from "../session_store";
-import { append_message, get_session, update_revision } from "../session_store";
 import { clamp_x_patch, is_out_of_bounds } from "./repair";
 import { plan_patch } from "./planner";
 
@@ -30,34 +28,31 @@ function extract_violations(payload: unknown): violation[] {
   return [];
 }
 
-async function load_state(api: ApiClient, session: Session) {
+async function load_state(api: ApiClient, session: { project_id: string; last_revision_id: string }) {
   const revision = await api.get_revision(session.project_id, session.last_revision_id);
   return revision;
 }
 
-async function apply_patch(api: ApiClient, session: Session, patch: proposed_patch): Promise<ApiResult<{ new_revision_id: string; violations: unknown[] }>> {
+async function apply_patch(
+  api: ApiClient,
+  session: { project_id: string; last_revision_id: string },
+  patch: proposed_patch
+): Promise<ApiResult<{ new_revision_id: string; violations: unknown[] }>> {
   return api.apply_patch(session.project_id, session.last_revision_id, patch);
 }
 
-export async function run_turn(api: ApiClient, session_id: string, command: string): Promise<TurnResult> {
-  const session = get_session(session_id);
-  if (!session) {
-    return {
-      ok: false,
-      session_id,
-      project_id: "",
-      base_revision_id: "",
-      message: "Session not found"
-    };
-  }
-
-  append_message(session_id, { role: "user", content: command, ts: Date.now() });
+export async function run_turn(
+  api: ApiClient,
+  session: { session_id: string; project_id: string; last_revision_id: string },
+  command: string
+): Promise<TurnResult> {
+  await api.add_message(session.session_id, "user", command);
 
   const revision = await load_state(api, session);
   if (!revision.ok) {
     return {
       ok: false,
-      session_id,
+      session_id: session.session_id,
       project_id: session.project_id,
       base_revision_id: session.last_revision_id,
       message: revision.error.message
@@ -69,7 +64,7 @@ export async function run_turn(api: ApiClient, session_id: string, command: stri
   if (!schema.ok) {
     return {
       ok: false,
-      session_id,
+      session_id: session.session_id,
       project_id: session.project_id,
       base_revision_id: session.last_revision_id,
       message: "state.invalid_schema"
@@ -80,7 +75,7 @@ export async function run_turn(api: ApiClient, session_id: string, command: stri
   if (!plan.ok) {
     return {
       ok: false,
-      session_id,
+      session_id: session.session_id,
       project_id: session.project_id,
       base_revision_id: session.last_revision_id,
       message: plan.error
@@ -93,7 +88,7 @@ export async function run_turn(api: ApiClient, session_id: string, command: stri
     if (!result.ok) {
       return {
         ok: false,
-        session_id,
+        session_id: session.session_id,
         project_id: session.project_id,
         base_revision_id: session.last_revision_id,
         proposed_patch: patch,
@@ -103,15 +98,15 @@ export async function run_turn(api: ApiClient, session_id: string, command: stri
 
     const violations = result.data.violations as violation[];
     if (!violations || violations.length === 0) {
-      update_revision(session_id, result.data.new_revision_id);
-      append_message(session_id, {
-        role: "assistant",
-        content: `Applied patch, new revision ${result.data.new_revision_id}`,
-        ts: Date.now()
-      });
+      await api.advance_session(session.session_id, result.data.new_revision_id);
+      await api.add_message(
+        session.session_id,
+        "assistant",
+        `Applied patch, new revision ${result.data.new_revision_id}`
+      );
       return {
         ok: true,
-        session_id,
+        session_id: session.session_id,
         project_id: session.project_id,
         base_revision_id: session.last_revision_id,
         new_revision_id: result.data.new_revision_id,
@@ -127,7 +122,7 @@ export async function run_turn(api: ApiClient, session_id: string, command: stri
 
     return {
       ok: false,
-      session_id,
+      session_id: session.session_id,
       project_id: session.project_id,
       base_revision_id: session.last_revision_id,
       proposed_patch: patch,
@@ -138,7 +133,7 @@ export async function run_turn(api: ApiClient, session_id: string, command: stri
 
   return {
     ok: false,
-    session_id,
+    session_id: session.session_id,
     project_id: session.project_id,
     base_revision_id: session.last_revision_id,
     proposed_patch: patch,

@@ -31,6 +31,26 @@ impl Violation {
         }
     }
 
+    pub fn warning(code: &str, message: &str, object_ids: Vec<String>) -> Self {
+        Self {
+            code: code.to_string(),
+            severity: Severity::Warning,
+            message: message.to_string(),
+            object_ids,
+            details: None,
+        }
+    }
+
+    pub fn info(code: &str, message: &str, object_ids: Vec<String>) -> Self {
+        Self {
+            code: code.to_string(),
+            severity: Severity::Info,
+            message: message.to_string(),
+            object_ids,
+            details: None,
+        }
+    }
+
     pub fn with_details(mut self, details: HashMap<String, Value>) -> Self {
         self.details = Some(details);
         self

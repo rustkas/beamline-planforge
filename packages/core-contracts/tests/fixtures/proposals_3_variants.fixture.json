@@ -1,0 +1,141 @@
+[
+  {
+    "schema_version": "0.1.0",
+    "proposal_id": "proposal_linear_001",
+    "kind": "linear",
+    "patch": {
+      "ops": [
+        {
+          "op": "replace",
+          "path": "/layout/objects/0/transform_mm/position_mm/x",
+          "value": 800
+        }
+      ],
+      "reason": "Align modules along the south wall",
+      "source": "agent"
+    },
+    "metrics": {
+      "schema_version": "0.1.0",
+      "triangle_proxy_mm": 3800,
+      "triangle_edges_mm": [1200, 1400, 1200],
+      "min_passage_mm": 1000,
+      "door_clearance_ok": true,
+      "utility_fit_score": 0.8
+    },
+    "explanations": [
+      {
+        "schema_version": "0.1.0",
+        "code": "layout.linear.wall",
+        "severity": "info",
+        "title": "Linear layout along the south wall",
+        "details": "Keeps circulation clear near the main entry.",
+        "evidence": {
+          "object_ids": ["obj_base_sink_600"]
+        }
+      }
+    ],
+    "violations_summary": []
+  },
+  {
+    "schema_version": "0.1.0",
+    "proposal_id": "proposal_l_001",
+    "kind": "l",
+    "patch": {
+      "ops": [
+        {
+          "op": "replace",
+          "path": "/layout/objects/0/transform_mm/position_mm/x",
+          "value": 600
+        },
+        {
+          "op": "replace",
+          "path": "/layout/objects/0/transform_mm/position_mm/y",
+          "value": 0
+        }
+      ],
+      "reason": "Create an L-shape with sink close to utilities",
+      "source": "agent"
+    },
+    "metrics": {
+      "schema_version": "0.1.0",
+      "triangle_proxy_mm": 3600,
+      "triangle_edges_mm": [1100, 1300, 1200],
+      "min_passage_mm": 950,
+      "door_clearance_ok": true,
+      "utility_fit_score": 0.9
+    },
+    "explanations": [
+      {
+        "schema_version": "0.1.0",
+        "code": "layout.lshape.utility",
+        "severity": "info",
+        "title": "Sink placed near water point",
+        "details": "Shorter connection for plumbing.",
+        "evidence": {
+          "violation_codes": ["layout.sink_near_water"],
+          "object_ids": ["obj_base_sink_600"]
+        }
+      }
+    ],
+    "violations_summary": [
+      {
+        "code": "layout.min_passage",
+        "severity": "warning",
+        "count": 1,
+        "message": "Minimum passage is tight",
+        "object_ids": ["obj_base_sink_600"]
+      }
+    ]
+  },
+  {
+    "schema_version": "0.1.0",
+    "proposal_id": "proposal_u_001",
+    "kind": "u",
+    "patch": {
+      "ops": [
+        {
+          "op": "replace",
+          "path": "/layout/objects/0/transform_mm/position_mm/x",
+          "value": 500
+        },
+        {
+          "op": "replace",
+          "path": "/layout/objects/0/transform_mm/position_mm/y",
+          "value": 0
+        }
+      ],
+      "reason": "Maximize counter space with a U-shape",
+      "source": "agent"
+    },
+    "metrics": {
+      "schema_version": "0.1.0",
+      "triangle_proxy_mm": 4100,
+      "triangle_edges_mm": [1400, 1400, 1300],
+      "min_passage_mm": 900,
+      "door_clearance_ok": false,
+      "utility_fit_score": 0.7
+    },
+    "explanations": [
+      {
+        "schema_version": "0.1.0",
+        "code": "layout.u.warning",
+        "severity": "warning",
+        "title": "Door swing is constrained",
+        "details": "U-shape pushes cabinetry close to the door clearance zone.",
+        "evidence": {
+          "violation_codes": ["layout.door_clearance"],
+          "object_ids": ["obj_base_sink_600"]
+        }
+      }
+    ],
+    "violations_summary": [
+      {
+        "code": "layout.door_clearance",
+        "severity": "error",
+        "count": 1,
+        "message": "Door clearance is blocked",
+        "object_ids": ["obj_base_sink_600"]
+      }
+    ]
+  }
+]

@@ -50,6 +50,22 @@ export function create_ai_orchestrator_client(base_url: string) {
     demo_session: () => request<{ session_id: string; project_id: string; revision_id: string }>("/demo/session", {
       method: "POST"
     }),
+    generate_proposals: (session_id: string) =>
+      request<{
+        proposals: Array<{
+          proposal_id: string;
+          revision_id: string;
+          variant_index: number;
+          rationale: Record<string, unknown>;
+          metrics?: Record<string, unknown>;
+          explanation_text?: string;
+          violations_summary?: Array<{ code: string; severity: string; count: number; message?: string }>;
+        }>;
+      }>(`/sessions/${session_id}/proposals`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({})
+      }),
     run_turn: (session_id: string, command: string) =>
       request<TurnResult>(`/sessions/${session_id}/turn`, {
         method: "POST",

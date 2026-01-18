@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "astro dev",
     "build": "astro build",
+    "build:ci": "ASTRO_TELEMETRY_DISABLED=1 bun run build",
     "preview": "astro preview",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
