@@ -23,11 +23,22 @@
     | { kind: "highlight"; object_ids: string[]; style: { mode: "outline" | "solid" } }
     | { kind: "overlay_labels"; labels: Array<{ object_id: string; text: string }> };
 
-  $: nodes = (($app_state.render_model as any)?.nodes as RenderNode[]) ?? [];
-  $: assets = (($app_state.render_model as any)?.assets?.gltf as RenderAssets) ?? {};
-  $: instructions = ($app_state.render_instructions as RenderInstruction[]) ?? [];
+  export let render_model: unknown | null = null;
+  export let render_instructions: RenderInstruction[] | null = null;
+  export let selected_object_id: string | null = null;
+  export let on_pick: ((object_id: string | null) => void) | null = null;
+
+  $: resolved_model = render_model === null ? null : render_model ?? $app_state.render_model;
+  $: resolved_instructions =
+    render_instructions === null ? [] : render_instructions ?? ($app_state.render_instructions as RenderInstruction[]);
+  $: nodes = ((resolved_model as any)?.nodes as RenderNode[]) ?? [];
+  $: assets = ((resolved_model as any)?.assets?.gltf as RenderAssets) ?? {};
+  $: instructions = resolved_instructions ?? [];
   $: highlight_ids = new Set(
-    instructions.flatMap((instr) => (instr.kind === "highlight" ? instr.object_ids : []))
+    [
+      ...instructions.flatMap((instr) => (instr.kind === "highlight" ? instr.object_ids : [])),
+      ...(selected_object_id ? [selected_object_id] : [])
+    ]
   );
   $: overlay_labels = instructions.flatMap((instr) =>
     instr.kind === "overlay_labels" ? instr.labels : []
@@ -58,6 +69,8 @@
         uri={asset_uri}
         position={[node.transform?.position_m?.x ?? 0, 0, node.transform?.position_m?.z ?? 0]}
         material_id={material_id}
+        object_id={node.source_object_id ?? null}
+        on:pick={(event) => on_pick?.(event.detail.object_id)}
       />
       {#if node.source_object_id && highlight_ids.has(node.source_object_id)}
         <mesh position={[node.transform?.position_m?.x ?? 0, 0, node.transform?.position_m?.z ?? 0]}>

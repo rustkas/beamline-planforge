@@ -2,6 +2,11 @@
   import { onMount } from "svelte";
   import type { SvelteComponent } from "svelte";
 
+  export let render_model: unknown | null = null;
+  export let render_instructions: unknown[] | null = null;
+  export let selected_object_id: string | null = null;
+  export let on_pick: ((object_id: string | null) => void) | null = null;
+
   let CanvasView: typeof SvelteComponent | null = null;
   let error = "";
 
@@ -16,7 +21,13 @@
 </script>
 
 {#if CanvasView}
-  <svelte:component this={CanvasView} />
+  <svelte:component
+    this={CanvasView}
+    {render_model}
+    render_instructions={render_instructions}
+    {selected_object_id}
+    {on_pick}
+  />
 {:else}
   <div class="viewer-placeholder">
     {#if error}

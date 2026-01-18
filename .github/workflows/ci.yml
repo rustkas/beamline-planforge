@@ -44,7 +44,9 @@ jobs:
         run: bun install
 
       - name: Typecheck (web)
-        run: bun --filter @planforge/web run typecheck
+        working-directory: apps/web
+        run: bun run typecheck
 
       - name: Build (web)
-        run: bun --filter @planforge/web run build:ci
+        working-directory: apps/web
+        run: bun run build:ci

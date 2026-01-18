@@ -1,4 +1,6 @@
 <script lang="ts">
+  import Viewer3D from "../../islands/Viewer3D.svelte";
+
   export type Proposal = {
     proposal_id: string;
     variant_index: number;
@@ -13,8 +15,30 @@
   export let error: string | null = null;
   export let appliedRevisionId: string | null = null;
   export let generatedAt: string | null = null;
+  export let renderQuality: "draft" | "quality" = "draft";
+  export let renderModel: unknown | null = null;
+  export let renderError: string | null = null;
+  export let selectedObject: {
+    id: string;
+    kind?: string;
+    catalog_item_id?: string;
+    dims_mm?: { width: number; depth: number; height: number };
+    material_slots?: Record<string, string>;
+  } | null = null;
+  export let appliedHistory: Array<{
+    time: string;
+    proposal_id: string;
+    kind?: string;
+    revision_id: string;
+    min_passage_mm?: number;
+    utility_fit_score?: number;
+  }> = [];
+  export let canRevert = false;
   export let onGenerate: () => void;
   export let onApply: (proposalId: string) => void;
+  export let onRevert: () => void;
+  export let onQualityChange: (quality: "draft" | "quality") => void;
+  export let onPickObject: (objectId: string | null) => void;
 
   function formatMetric(label: string, value: unknown): string {
     if (typeof value === "number") return `${label}: ${value}`;
@@ -54,6 +78,25 @@
     {#if generatedAt}
       <span class="meta">Generated at {generatedAt}</span>
     {/if}
+    <div class="quality">
+      <span class="meta">Quality</span>
+      <button
+        type="button"
+        class:active={renderQuality === "draft"}
+        on:click={() => onQualityChange("draft")}
+        disabled={loading}
+      >
+        Draft
+      </button>
+      <button
+        type="button"
+        class:active={renderQuality === "quality"}
+        on:click={() => onQualityChange("quality")}
+        disabled={loading}
+      >
+        Quality
+      </button>
+    </div>
   </div>
 
   {#if proposals.length === 0}
@@ -94,6 +137,74 @@
   {#if appliedRevisionId}
     <p class="meta">Applied → revision {appliedRevisionId}</p>
   {/if}
+
+  {#if appliedHistory.length > 0}
+    <section class="history">
+      <header class="row">
+        <h3>Applied history</h3>
+        <button type="button" on:click={onRevert} disabled={loading || !canRevert}>
+          Revert to base
+        </button>
+      </header>
+      <ul>
+        {#each appliedHistory as item}
+          <li>
+            <strong>{item.kind ?? "variant"}</strong> — {item.time} · {item.proposal_id}
+            <span class="meta">rev {item.revision_id}</span>
+            {#if item.min_passage_mm !== undefined}
+              <span class="meta">min passage {item.min_passage_mm}mm</span>
+            {/if}
+            {#if item.utility_fit_score !== undefined}
+              <span class="meta">utility fit {item.utility_fit_score}</span>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    </section>
+  {/if}
+
+  <section class="preview">
+    <header class="row">
+      <h3>3D preview</h3>
+      {#if renderError}
+        <span class="error">{renderError}</span>
+      {/if}
+    </header>
+    <Viewer3D
+      render_model={renderModel}
+      selected_object_id={selectedObject?.id ?? null}
+      on_pick={onPickObject}
+    />
+  </section>
+
+  {#if selectedObject}
+    <section class="card">
+      <h3>Selected object</h3>
+      <p><strong>ID:</strong> {selectedObject.id}</p>
+      {#if selectedObject.kind}
+        <p><strong>Kind:</strong> {selectedObject.kind}</p>
+      {/if}
+      {#if selectedObject.catalog_item_id}
+        <p><strong>SKU:</strong> {selectedObject.catalog_item_id}</p>
+      {/if}
+      {#if selectedObject.dims_mm}
+        <p>
+          <strong>Dims:</strong>
+          {selectedObject.dims_mm.width}×{selectedObject.dims_mm.depth}×{selectedObject.dims_mm.height} mm
+        </p>
+      {/if}
+      {#if selectedObject.material_slots}
+        <details>
+          <summary>Material slots</summary>
+          <ul>
+            {#each Object.entries(selectedObject.material_slots) as [slot, material]}
+              <li>{slot}: {material}</li>
+            {/each}
+          </ul>
+        </details>
+      {/if}
+    </section>
+  {/if}
 </section>
 
 <style>
@@ -106,6 +217,22 @@
     gap: 0.75rem;
     align-items: center;
     flex-wrap: wrap;
+  }
+  .quality {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+  }
+  .quality button {
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid #d1d5db;
+    background: #fff;
+    color: #111827;
+  }
+  .quality button.active {
+    background: #111827;
+    color: #fef3c7;
   }
   .grid {
     display: grid;
@@ -136,6 +263,23 @@
   }
   .error {
     color: #991b1b;
+  }
+  .history {
+    padding: 0.75rem;
+    border-radius: 0.75rem;
+    background: #fffaf2;
+    border: 1px solid #f1f5f9;
+  }
+  .history ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .preview {
+    display: grid;
+    gap: 0.5rem;
   }
   button {
     padding: 0.5rem 0.75rem;

@@ -149,6 +149,12 @@ export function create_api_core_client(base_url: string) {
         body: JSON.stringify({ project_id, revision_id })
       }),
     get_session: (session_id: string) => request<SessionResponse>(`/sessions/${session_id}`),
+    advance_session: (session_id: string, revision_id: string) =>
+      request<{ session_id: string; revision_id: string }>(`/sessions/${session_id}/advance`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ revision_id })
+      }),
     create_proposals: (
       session_id: string,
       revision_id: string,

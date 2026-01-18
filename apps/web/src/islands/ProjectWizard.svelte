@@ -67,6 +67,19 @@
   let layoutError: string | null = null;
   let appliedRevisionId: string | null = null;
   let quoteDebounce: ReturnType<typeof setTimeout> | null = null;
+  let renderModel: unknown | null = null;
+  let renderQuality: "draft" | "quality" = "draft";
+  let renderError: string | null = null;
+  let selectedObjectId: string | null = null;
+  let baseRevisionId: string | null = null;
+  let appliedHistory: Array<{
+    time: string;
+    proposal_id: string;
+    kind?: string;
+    revision_id: string;
+    min_passage_mm?: number;
+    utility_fit_score?: number;
+  }> = [];
 
   let customerName = "";
   let customerEmail = "";
@@ -77,6 +90,14 @@
 
   function storageKey(projectId: string): string {
     return `planforge_project::${projectId}`;
+  }
+
+  function appliedKey(projectId: string): string {
+    return `planforge_wizard_applied::${projectId}`;
+  }
+
+  function baseKey(projectId: string): string {
+    return `planforge_wizard_base::${projectId}`;
   }
 
   function currentStep(): Step {
@@ -210,6 +231,17 @@
     proposalsGeneratedAt = new Date().toLocaleTimeString();
   }
 
+  async function refreshRender(): Promise<void> {
+    if (!projectId || !revisionId) return;
+    renderError = null;
+    const res = await api.render(projectId, revisionId, renderQuality);
+    if (!res.ok) {
+      renderError = res.error.message;
+      return;
+    }
+    renderModel = res.data;
+  }
+
   async function applyLayoutProposal(proposalId: string): Promise<void> {
     layoutError = null;
     layoutLoading = true;
@@ -226,8 +258,27 @@
     }
     appliedRevisionId = res.data.new_revision_id;
     revisionId = res.data.new_revision_id;
+    if (projectId) {
+      const historyEntry = proposals.find((p) => p.proposal_id === proposalId);
+      appliedHistory = [
+        ...appliedHistory,
+        {
+          time: new Date().toLocaleTimeString(),
+          proposal_id: proposalId,
+          kind: historyEntry?.kind,
+          revision_id: res.data.new_revision_id,
+          min_passage_mm: (historyEntry?.metrics as any)?.min_passage_mm,
+          utility_fit_score: (historyEntry?.metrics as any)?.utility_fit_score
+        }
+      ];
+      localStorage.setItem(appliedKey(projectId), JSON.stringify(appliedHistory));
+    }
     if (projectId && revisionId) {
-      void api.render(projectId, revisionId, "draft");
+      const next = await api.get_revision(projectId, revisionId);
+      if (next.ok) {
+        kitchenState = next.data.kitchen_state;
+      }
+      await refreshRender();
       scheduleQuoteRefresh();
     }
   }
@@ -240,6 +291,32 @@
     quoteDebounce = setTimeout(async () => {
       await fetchQuote();
     }, 400);
+  }
+
+  async function revertToBase(): Promise<void> {
+    if (!projectId || !baseRevisionId || !sessionId) return;
+    layoutError = null;
+    layoutLoading = true;
+    const res = await api.advance_session(sessionId, baseRevisionId);
+    layoutLoading = false;
+    if (!res.ok) {
+      layoutError = res.error.message;
+      return;
+    }
+    revisionId = baseRevisionId;
+    appliedRevisionId = baseRevisionId;
+    selectedObjectId = null;
+    await refreshRender();
+    scheduleQuoteRefresh();
+  }
+
+  async function changeQuality(nextQuality: "draft" | "quality"): Promise<void> {
+    renderQuality = nextQuality;
+    await refreshRender();
+  }
+
+  function handlePick(objectId: string | null): void {
+    selectedObjectId = objectId;
   }
 
   function addOpening(kind: "door" | "window"): void {
@@ -329,7 +406,19 @@
     }
     projectId = created.data.project_id;
     revisionId = created.data.revision_id;
+    if (!baseRevisionId) {
+      baseRevisionId = created.data.revision_id;
+      localStorage.setItem(baseKey(projectId), baseRevisionId);
+    }
     localStorage.setItem(storageKey(projectId), JSON.stringify({ revision_id: revisionId }));
+    const storedHistory = localStorage.getItem(appliedKey(projectId));
+    if (storedHistory) {
+      try {
+        appliedHistory = JSON.parse(storedHistory) as typeof appliedHistory;
+      } catch {
+        appliedHistory = [];
+      }
+    }
   }
 
   async function fetchQuote(): Promise<void> {
@@ -394,7 +483,26 @@
       position_y: u.position_mm?.y ?? 0,
       zone_radius_mm: u.zone_radius_mm ?? 200
     }));
+    if (projectId) {
+      const storedBase = localStorage.getItem(baseKey(projectId));
+      if (storedBase) baseRevisionId = storedBase;
+    }
   });
+
+  $: selectedObject = (() => {
+    if (!kitchenState || !selectedObjectId) return null;
+    const objects = (kitchenState as any)?.layout?.objects;
+    if (!Array.isArray(objects)) return null;
+    const found = objects.find((obj: any) => obj.id === selectedObjectId);
+    if (!found) return null;
+    return {
+      id: found.id,
+      kind: found.kind,
+      catalog_item_id: found.catalog_item_id,
+      dims_mm: found.dims_mm,
+      material_slots: found.material_slots
+    };
+  })();
 </script>
 
 <section class="wizard">
@@ -598,8 +706,17 @@
         error={layoutError}
         generatedAt={proposalsGeneratedAt}
         appliedRevisionId={appliedRevisionId}
+        appliedHistory={appliedHistory}
+        renderModel={renderModel}
+        renderQuality={renderQuality}
+        renderError={renderError}
+        selectedObject={selectedObject}
+        canRevert={!!baseRevisionId}
         onGenerate={generateLayoutProposals}
         onApply={applyLayoutProposal}
+        onRevert={revertToBase}
+        onQualityChange={changeQuality}
+        onPickObject={handlePick}
       />
       {#if quote}
         <div class="quote">

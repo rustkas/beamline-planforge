@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { createEventDispatcher } from "svelte";
   import { Color, MeshStandardMaterial, type Group, type Mesh } from "three";
   import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
   import { resolve_material } from "../lib/three/materials";
@@ -7,10 +8,12 @@
   export let uri = "";
   export let position: [number, number, number] = [0, 0, 0];
   export let material_id: string | undefined = undefined;
+  export let object_id: string | null = null;
 
   let scene: Group | null = null;
   let load_error = "";
   let current_uri = "";
+  const dispatch = createEventDispatcher<{ pick: { object_id: string | null } }>();
 
   function current_material() {
     return resolve_material(material_id);
@@ -62,12 +65,12 @@
 </script>
 
 {#if scene}
-  <group position={position}>
+  <group position={position} on:pointerdown={() => dispatch("pick", { object_id })}>
     <primitive object={scene} />
   </group>
 {:else}
   {@const material_def = current_material()}
-  <mesh position={position}>
+  <mesh position={position} on:pointerdown={() => dispatch("pick", { object_id })}>
     <boxGeometry args={[0.6, 0.7, 0.6]} />
     <meshStandardMaterial color={load_error ? "#ef4444" : material_def.color} />
   </mesh>
