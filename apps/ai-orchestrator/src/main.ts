@@ -5,6 +5,7 @@ import { run_turn } from "./agent/run_turn";
 import fixture from "./assets/kitchen_state.fixture.json";
 import { build_variants } from "./agent/proposals";
 import type { violation } from "@planforge/plugin-sdk";
+import { plan_patch } from "./agent/planner";
 
 const port = Number(process.env.ORCHESTRATOR_PORT ?? 3002);
 const api_base_url = process.env.API_CORE_BASE_URL ?? "http://localhost:3001";
@@ -85,6 +86,119 @@ app.post("/sessions/:session_id/proposals", async (c) => {
     return c.json({ error: stored.error }, 502);
   }
   return c.json(stored.data);
+});
+
+function summarize_violations(list: violation[]): Array<{ code: string; severity: string; count: number }> {
+  const map = new Map<string, { code: string; severity: string; count: number }>();
+  for (const v of list) {
+    const key = `${v.code}:${v.severity}`;
+    const entry = map.get(key) ?? { code: v.code, severity: v.severity, count: 0 };
+    entry.count += 1;
+    map.set(key, entry);
+  }
+  return Array.from(map.values());
+}
+
+function build_explanations(command: string): Array<{ group: string; title: string; detail?: string }> {
+  const explanations: Array<{ group: string; title: string; detail?: string }> = [];
+  if (/sink/i.test(command) || /мойк/i.test(command)) {
+    explanations.push({
+      group: "utilities",
+      title: "Sink prioritized near water/window",
+      detail: "Placed sink to align with nearby utility or opening."
+    });
+  }
+  if (/hob/i.test(command) || /варочн/i.test(command)) {
+    explanations.push({
+      group: "utilities",
+      title: "Hob moved toward ventilation",
+      detail: "Placed hob closer to vent utility where possible."
+    });
+  }
+  if (/passage/i.test(command) || /проход/i.test(command)) {
+    explanations.push({
+      group: "constraints",
+      title: "Increased passage clearance",
+      detail: "Shifted base objects away from wall to widen passage."
+    });
+  }
+  if (/upper/i.test(command) || /верхн/i.test(command)) {
+    explanations.push({
+      group: "ergonomics",
+      title: "Upper cabinets removed",
+      detail: "Removed upper cabinets to keep the space open."
+    });
+  }
+  if (explanations.length === 0) {
+    explanations.push({
+      group: "rules",
+      title: "Applied requested change",
+      detail: "Change applied deterministically by planner rules."
+    });
+  }
+  return explanations;
+}
+
+app.post("/sessions/:session_id/refine/preview", async (c) => {
+  const session_id = c.req.param("session_id");
+  const body = (await c.req.json()) as { command?: string };
+  if (!body.command) {
+    return c.json({ error: { code: "command.missing", message: "command required" } }, 400);
+  }
+
+  const api = create_api_client(api_base_url);
+  const session_res = await api.get_session(session_id);
+  if (!session_res.ok) {
+    return c.json({ error: session_res.error }, 404);
+  }
+  const session = session_res.data.session;
+  const revision = await api.get_revision(session.project_id, session.last_revision_id);
+  if (!revision.ok) {
+    return c.json({ error: revision.error }, 502);
+  }
+
+  const plan = plan_patch(body.command, revision.data.kitchen_state);
+  if (!plan.ok) {
+    return c.json({ ok: false, message: plan.error }, 200);
+  }
+
+  const preview = await api.preview_patch(session.project_id, session.last_revision_id, plan.patch);
+  if (!preview.ok) {
+    return c.json({ ok: false, message: preview.error.message }, 200);
+  }
+  const violations = preview.data.violations as violation[];
+  const summary = summarize_violations(violations);
+  const explanations = build_explanations(body.command);
+
+  return c.json({
+    ok: true,
+    proposed_patch: plan.patch,
+    explanations,
+    violations,
+    violations_summary: summary,
+    message: plan.message
+  });
+});
+
+app.post("/sessions/:session_id/refine/apply", async (c) => {
+  const session_id = c.req.param("session_id");
+  const body = (await c.req.json()) as { command?: string };
+  if (!body.command) {
+    return c.json({ error: { code: "command.missing", message: "command required" } }, 400);
+  }
+
+  const api = create_api_client(api_base_url);
+  const session_res = await api.get_session(session_id);
+  if (!session_res.ok) {
+    return c.json({ error: session_res.error }, 404);
+  }
+  const session = session_res.data.session;
+  const result = await run_turn(
+    api,
+    { session_id: session.session_id, project_id: session.project_id, last_revision_id: session.last_revision_id },
+    body.command
+  );
+  return c.json(result);
 });
 
 app.post("/demo/session", async (c) => {

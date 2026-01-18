@@ -53,6 +53,18 @@
   export let onUpdateDraftPosition: ((pos: { x: number; y: number }) => void) | null = null;
   export let onResetDraft: (() => void) | null = null;
   export let onFocusViolations: ((code: string | null) => void) | null = null;
+  export let refineLoading = false;
+  export let refineError: string | null = null;
+  export let refinePreview:
+    | {
+        proposed_patch?: unknown;
+        explanations?: Array<{ group: string; title: string; detail?: string }>;
+        violations_summary?: Array<{ code: string; severity: string; count: number }>;
+        message?: string;
+      }
+    | null = null;
+  export let onRefinePreview: (command: string) => void;
+  export let onRefineApply: (command: string) => void;
 
   const substeps = ["room", "zones", "objects", "rules", "review"] as const;
   type Substep = (typeof substeps)[number];
@@ -60,8 +72,10 @@
   let draftX = 0;
   let draftY = 0;
   let focusedCode: string | null = null;
+  let refineCommand = "";
 
-  $: busy = loading || renderStatus === "loading";
+  $: busy = loading || renderStatus === "loading" || refineLoading;
+  $: refineDisabled = busy || !appliedRevisionId;
   $: substep = (substeps[substepIndex] ?? "room") as Substep;
   $: if (wizardVariant === "B" && selectedObjectPosition) {
     draftX = selectedObjectPosition.x;
@@ -105,6 +119,11 @@
       .join(", ");
   }
 
+  function summarizeRefine(items?: Array<{ code: string; severity: string; count: number }>): string | null {
+    if (!items || items.length === 0) return null;
+    return items.map((item) => `${item.count} ${item.severity}`).join(", ");
+  }
+
   function nextSubstep(): void {
     if (substepIndex < substeps.length - 1) substepIndex += 1;
   }
@@ -123,6 +142,16 @@
     const next = focusedCode === code ? null : code;
     focusedCode = next;
     onFocusViolations?.(next);
+  }
+
+  function runPreview(): void {
+    if (!refineCommand.trim() || refineDisabled) return;
+    onRefinePreview(refineCommand.trim());
+  }
+
+  function runApply(): void {
+    if (!refineCommand.trim() || refineDisabled) return;
+    onRefineApply(refineCommand.trim());
   }
 </script>
 
@@ -292,6 +321,70 @@
         {/each}
       </div>
     {/if}
+  {/if}
+
+  {#if wizardVariant === "B" && substep === "review"}
+    <section class="card">
+      <header class="row">
+        <h3>Refine with agent</h3>
+        {#if refineLoading}
+          <span class="meta">working…</span>
+        {/if}
+      </header>
+      <div class="row">
+        <input
+          type="text"
+          placeholder="move sink near window"
+          bind:value={refineCommand}
+          disabled={refineDisabled}
+        />
+        <button type="button" class="ghost" on:click={runPreview} disabled={refineDisabled}>
+          Preview
+        </button>
+        <button type="button" on:click={runApply} disabled={refineDisabled}>
+          Apply
+        </button>
+      </div>
+      <div class="row">
+        <button type="button" class="ghost" on:click={() => (refineCommand = "move sink near window")} disabled={refineDisabled}>
+          move sink near window
+        </button>
+        <button type="button" class="ghost" on:click={() => (refineCommand = "move hob near vent")} disabled={refineDisabled}>
+          move hob near vent
+        </button>
+        <button type="button" class="ghost" on:click={() => (refineCommand = "increase passage")} disabled={refineDisabled}>
+          increase passage
+        </button>
+        <button type="button" class="ghost" on:click={() => (refineCommand = "remove upper cabinets")} disabled={refineDisabled}>
+          remove upper cabinets
+        </button>
+      </div>
+      {#if refineError}
+        <p class="error">{refineError}</p>
+      {/if}
+      {#if refinePreview}
+        <div class="preview-box">
+          {#if refinePreview.message}
+            <p class="meta">{refinePreview.message}</p>
+          {/if}
+          {#if refinePreview.explanations}
+            <ul>
+              {#each refinePreview.explanations as exp}
+                <li>
+                  <strong>{exp.group}</strong> — {exp.title}
+                  {#if exp.detail}
+                    <span class="meta">· {exp.detail}</span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if summarizeRefine(refinePreview.violations_summary)}
+            <p class="warn">Violations: {summarizeRefine(refinePreview.violations_summary)}</p>
+          {/if}
+        </div>
+      {/if}
+    </section>
   {/if}
 
   {#if appliedRevisionId}
@@ -511,6 +604,13 @@
     margin: 0;
     display: grid;
     gap: 0.35rem;
+  }
+  .preview-box {
+    border-radius: 0.6rem;
+    background: #f8fafc;
+    padding: 0.6rem;
+    display: grid;
+    gap: 0.4rem;
   }
   .preview {
     display: grid;

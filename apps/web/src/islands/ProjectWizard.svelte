@@ -98,6 +98,23 @@
     utility_fit_score?: number;
   }> = [];
 
+  let refineLoading = false;
+  let refineError: string | null = null;
+  let refinePreview: {
+    proposed_patch?: unknown;
+    explanations?: Array<{ group: string; title: string; detail?: string }>;
+    violations?: Array<{ code: string; severity: string; object_ids: string[] }>;
+    violations_summary?: Array<{ code: string; severity: string; count: number }>;
+    message?: string;
+  } | null = null;
+
+  let materialOverrides: Record<string, string> = {};
+  let materialTargetId: string | null = null;
+
+  let exportLoading = false;
+  let exportError: string | null = null;
+  let exportArtifacts: Array<{ id: string; name: string; mime: string; sha256: string; size: number; url?: string; download_url?: string }> = [];
+
   let customerName = "";
   let customerEmail = "";
   let customerPhone = "";
@@ -129,6 +146,12 @@
     const objects = state?.layout?.objects;
     if (!Array.isArray(objects)) return null;
     return objects.find((obj: any) => obj?.id === objectId) ?? null;
+  }
+
+  function findObjectIndex(state: any, objectId: string): number {
+    const objects = state?.layout?.objects;
+    if (!Array.isArray(objects)) return -1;
+    return objects.findIndex((obj: any) => obj?.id === objectId);
   }
 
   function getObjectPosition(state: any, objectId: string): { x: number; y: number } | null {
@@ -401,20 +424,32 @@
       layoutError = res.error.message;
       return;
     }
-    appliedRevisionId = res.data.new_revision_id;
-    revisionId = res.data.new_revision_id;
-    layoutViolations = Array.isArray(res.data.violations) ? res.data.violations : [];
-    if (projectId) {
-      const historyEntry = proposals.find((p) => p.proposal_id === proposalId);
+    refinePreview = null;
+    await applyRevisionUpdate(res.data.new_revision_id, res.data.violations, {
+      proposal_id: proposalId,
+      kind: proposals.find((p) => p.proposal_id === proposalId)?.kind,
+      metrics: proposals.find((p) => p.proposal_id === proposalId)?.metrics
+    });
+  }
+
+  async function applyRevisionUpdate(
+    newRevisionId: string,
+    violations: unknown[],
+    historyEntry?: { proposal_id: string; kind?: string; metrics?: Record<string, unknown> }
+  ): Promise<void> {
+    appliedRevisionId = newRevisionId;
+    revisionId = newRevisionId;
+    layoutViolations = Array.isArray(violations) ? (violations as any) : [];
+    if (projectId && historyEntry) {
       appliedHistory = [
         ...appliedHistory,
         {
           time: new Date().toLocaleTimeString(),
-          proposal_id: proposalId,
-          kind: historyEntry?.kind,
-          revision_id: res.data.new_revision_id,
-          min_passage_mm: (historyEntry?.metrics as any)?.min_passage_mm,
-          utility_fit_score: (historyEntry?.metrics as any)?.utility_fit_score
+          proposal_id: historyEntry.proposal_id,
+          kind: historyEntry.kind,
+          revision_id: newRevisionId,
+          min_passage_mm: (historyEntry.metrics as any)?.min_passage_mm,
+          utility_fit_score: (historyEntry.metrics as any)?.utility_fit_score
         }
       ];
       localStorage.setItem(appliedKey(projectId), JSON.stringify(appliedHistory));
@@ -423,6 +458,8 @@
       const next = await api.get_revision(projectId, revisionId);
       if (next.ok) {
         kitchenState = next.data.kitchen_state;
+        materialTargetId = null;
+        materialOverrides = {};
         if (wizardVariant === "B") {
           appliedKitchenState = cloneKitchenState(next.data.kitchen_state);
           draftKitchenState = cloneKitchenState(next.data.kitchen_state);
@@ -465,6 +502,8 @@
       const next = await api.get_revision(projectId, revisionId);
       if (next.ok) {
         kitchenState = next.data.kitchen_state;
+        materialTargetId = null;
+        materialOverrides = {};
         if (wizardVariant === "B") {
           appliedKitchenState = cloneKitchenState(next.data.kitchen_state);
           draftKitchenState = cloneKitchenState(next.data.kitchen_state);
@@ -488,6 +527,127 @@
     await refreshRender();
   }
 
+  async function previewRefine(command: string): Promise<void> {
+    if (!command.trim()) return;
+    if (!sessionId) {
+      await ensureSession();
+    }
+    if (!sessionId) return;
+    refineLoading = true;
+    refineError = null;
+    const res = await orchestrator.preview_refine(sessionId, command);
+    refineLoading = false;
+    if (!res.ok) {
+      refineError = res.error.message;
+      return;
+    }
+    if (!res.data.ok) {
+      refineError = res.data.message ?? "Refine preview failed";
+      return;
+    }
+    refinePreview = res.data;
+  }
+
+  async function applyRefine(command: string): Promise<void> {
+    if (!command.trim()) return;
+    if (!sessionId) {
+      await ensureSession();
+    }
+    if (!sessionId) return;
+    refineLoading = true;
+    refineError = null;
+    const res = await orchestrator.apply_refine(sessionId, command);
+    refineLoading = false;
+    if (!res.ok) {
+      refineError = res.error.message;
+      return;
+    }
+    if (!res.data.ok || !res.data.new_revision_id) {
+      refineError = res.data.message ?? "Refine apply failed";
+      refinePreview = null;
+      return;
+    }
+    refinePreview = null;
+    await applyRevisionUpdate(res.data.new_revision_id, res.data.violations ?? [], {
+      proposal_id: `refine-${Date.now()}`,
+      kind: "refine"
+    });
+  }
+
+  function materialOptions(): Array<{ id: string; label: string }> {
+    return [
+      { id: "mat_front_white", label: "Front white" },
+      { id: "mat_front_wood", label: "Front wood" },
+      { id: "mat_front_graphite", label: "Front graphite" },
+      { id: "mat_body_white", label: "Body white" },
+      { id: "mat_top_oak", label: "Top oak" },
+      { id: "mat_top_stone", label: "Top stone" }
+    ];
+  }
+
+  function materialTarget(state: any): any | null {
+    if (!state?.layout?.objects || state.layout.objects.length === 0) return null;
+    if (selectedObjectId) {
+      const selected = findObject(state, selectedObjectId);
+      if (selected) return selected;
+    }
+    return state.layout.objects[0] ?? null;
+  }
+
+  async function applyMaterialSlot(slot: string, value: string): Promise<void> {
+    if (!projectId || !revisionId || !kitchenState) return;
+    const target = materialTarget(kitchenState);
+    if (!target?.id) return;
+    const index = findObjectIndex(kitchenState, target.id);
+    if (index < 0) return;
+    const current = target.material_slots ?? {};
+    const op = Object.prototype.hasOwnProperty.call(current, slot) ? "replace" : "add";
+    const patch = {
+      ops: [
+        {
+          op,
+          path: `/layout/objects/${index}/material_slots/${slot}`,
+          value
+        }
+      ],
+      reason: `Set material ${slot} to ${value}`,
+      source: "user"
+    };
+    const res = await api.apply_patch(projectId, revisionId, patch);
+    if (!res.ok) {
+      error = res.error.message;
+      return;
+    }
+    await applyRevisionUpdate(res.data.new_revision_id, res.data.violations ?? []);
+  }
+
+  function handleMaterialChange(slot: string, event: Event): void {
+    const target = event.currentTarget as HTMLSelectElement | null;
+    const nextValue = target?.value;
+    if (!nextValue) return;
+    materialOverrides = { ...materialOverrides, [slot]: nextValue };
+    void applyMaterialSlot(slot, nextValue);
+  }
+
+  async function requestExport(format: "json" | "pdf"): Promise<void> {
+    if (!projectId || !revisionId) return;
+    exportLoading = true;
+    exportError = null;
+    const res = await api.create_exports(projectId, revisionId, format);
+    exportLoading = false;
+    if (!res.ok) {
+      exportError = res.error.message;
+      return;
+    }
+    const next = res.data.artifacts ?? [];
+    const merged = [...exportArtifacts];
+    for (const art of next) {
+      if (!merged.some((a) => a.id === art.id)) {
+        merged.push(art);
+      }
+    }
+    exportArtifacts = merged;
+  }
   function handlePick(objectId: string | null): void {
     selectedObjectId = objectId;
     if (!objectId) {
@@ -709,6 +869,14 @@
     wizardVariant === "B" && selectedObjectId && selectionState
       ? getObjectPosition(selectionState, selectedObjectId)
       : null;
+
+  $: if (currentStep() === "materials" && kitchenState) {
+    const target = materialTarget(kitchenState);
+    if (target?.id && target.id !== materialTargetId) {
+      materialTargetId = target.id;
+      materialOverrides = { ...(target.material_slots ?? {}) };
+    }
+  }
 </script>
 
 <section class="wizard">
@@ -932,6 +1100,11 @@
         violations={layoutViolations}
         focusObjectIds={focusObjectIds}
         canRevert={!!baseRevisionId}
+        refineLoading={refineLoading}
+        refineError={refineError}
+        refinePreview={refinePreview}
+        onRefinePreview={previewRefine}
+        onRefineApply={applyRefine}
         onGenerate={generateLayoutProposals}
         onApply={applyLayoutProposal}
         onRevert={revertToBase}
@@ -951,11 +1124,30 @@
   {:else if currentStep() === "materials"}
     <div class="panel">
       <h2>Materials</h2>
-      <select bind:value={material}>
-        <option value="oak">Oak</option>
-        <option value="white">White matte</option>
-        <option value="graphite">Graphite</option>
-      </select>
+      {#if !kitchenState || !materialTarget(kitchenState)}
+        <p class="meta">No objects available to edit materials.</p>
+      {:else}
+        <p class="meta">Editing materials for {materialTarget(kitchenState).id}</p>
+        {#if Object.keys(materialOverrides).length === 0}
+          <p class="meta">No material slots found on this object.</p>
+        {:else}
+          <div class="materials">
+            {#each Object.entries(materialOverrides) as [slot, value]}
+            <label>
+              {slot}
+              <select
+                value={value}
+                on:change={(e) => handleMaterialChange(slot, e)}
+              >
+                  {#each materialOptions() as option}
+                    <option value={option.id}>{option.label}</option>
+                  {/each}
+                </select>
+              </label>
+            {/each}
+          </div>
+        {/if}
+      {/if}
     </div>
   {:else if currentStep() === "quote"}
     <div class="panel">
@@ -984,6 +1176,33 @@
         <div class="frozen">
           <p>Order confirmed: <strong>{orderId}</strong></p>
           <p>Project: {projectId}</p>
+          <div class="row">
+            <button on:click={() => requestExport("json")} disabled={exportLoading}>
+              Download specs
+            </button>
+            <button on:click={() => requestExport("pdf")} disabled={exportLoading}>
+              Download PDF
+            </button>
+          </div>
+          {#if exportError}
+            <p class="error">{exportError}</p>
+          {/if}
+          {#if exportArtifacts.length > 0}
+            <ul class="artifacts">
+              {#each exportArtifacts as art}
+                <li>
+                  {#if art.download_url || art.url}
+                    <a href={art.download_url ?? art.url} target="_blank" rel="noreferrer">
+                      {art.name}
+                    </a>
+                  {:else}
+                    {art.name}
+                  {/if}
+                  <span class="meta">{art.mime}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         </div>
       {:else}
         <label>Name<input type="text" bind:value={customerName} /></label>
@@ -1145,5 +1364,20 @@
     padding: 0.75rem;
     border-radius: 0.5rem;
     background: #fef3c7;
+  }
+  .materials {
+    display: grid;
+    gap: 0.75rem;
+  }
+  .artifacts {
+    list-style: none;
+    padding: 0;
+    margin: 0.5rem 0 0;
+    display: grid;
+    gap: 0.35rem;
+  }
+  .artifacts a {
+    color: #111827;
+    text-decoration: underline;
   }
 </style>

@@ -18,6 +18,15 @@ export type TurnResult = {
   message: string;
 };
 
+export type RefinePreview = {
+  ok: boolean;
+  proposed_patch?: unknown;
+  explanations?: Array<{ group: string; title: string; detail?: string }>;
+  violations?: Array<{ code: string; severity: string; object_ids: string[] }>;
+  violations_summary?: Array<{ code: string; severity: string; count: number }>;
+  message?: string;
+};
+
 function make_error(status: number, message: string, details?: Record<string, unknown>): ApiError {
   return { code: `http.${status}`, message, status, details };
 }
@@ -68,6 +77,18 @@ export function create_ai_orchestrator_client(base_url: string) {
       }),
     run_turn: (session_id: string, command: string) =>
       request<TurnResult>(`/sessions/${session_id}/turn`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command })
+      }),
+    preview_refine: (session_id: string, command: string) =>
+      request<RefinePreview>(`/sessions/${session_id}/refine/preview`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ command })
+      }),
+    apply_refine: (session_id: string, command: string) =>
+      request<TurnResult>(`/sessions/${session_id}/refine/apply`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ command })
